@@ -19,7 +19,8 @@ Six predictors, scored two ways (cofolders converted to `pK = 6 - affinity_pred_
 ![benchmark](figures/benchmark.png)
 
 Left panel: rank affinity among the 37 binders (Spearman vs pKd). Right panel: tell the correct
-ligand from the wrong one across all 47 (AUROC). Bars are 95% bootstrap CIs.
+ligand from the wrong one across all 47 (AUROC). Bars are 95% bootstrap CIs. The figure shows one
+metric per model plus the baselines; `score.py` reports all eleven.
 
 - **Ranking affinity is hard.** The dedicated affinity heads do not beat lipophilicity: Boltz-2
   +0.39, Nesso-1 +0.33, versus cLogP +0.40. Structural confidence edges ahead (iptm ~+0.48). CIs are
@@ -36,9 +37,13 @@ ligand from the wrong one across all 47 (AUROC). Bars are 95% bootstrap CIs.
 
 ## Caveats
 
-Small n (37 + 10), so CIs are wide and single-metric orderings are suggestive. The three cofolders
-share the AF3-style family and are not independent. Positive KDs come from mixed assays (ITC / SPR /
-MST / fluorescence) and are not cross-calibrated.
+Small n (37 binders, 10 negatives), so CIs are wide and single-metric orderings are suggestive. The
+10 negatives are experimentally confirmed non-binders but come from only ~6 designed proteins; the
+baselines failing (AUROC 0.44 / 0.24) rules out trivial ligand-property separation, but the
+specificity result is still suggestive. The combination's gain over the best single metric is modest
+and comes from adding a structural proxy (affinity heads plus cLogP alone reach only +0.30). The
+three cofolders share the AF3-style family and are not independent. Positive KDs come from mixed
+assays (ITC / SPR / MST / fluorescence) and are not cross-calibrated.
 
 ## Layout
 
