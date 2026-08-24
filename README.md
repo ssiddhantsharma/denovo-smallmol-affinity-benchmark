@@ -1,18 +1,18 @@
 # de-novo small-molecule affinity benchmark
 
-Do protein-ligand affinity predictors work on **de-novo designed** binders? Existing leaderboards
-(e.g. OpenBind EV-A71 2A) score them on natural targets. This is a small, clean, complementary split
-built entirely from published de-novo designs: **47 protein-ligand pairs**, each a designed protein
-plus a small molecule, with an experimental label.
+Do protein-ligand affinity predictors work on **de-novo designed** binders? Existing affinity
+leaderboards score them on natural targets. This is a small, clean, complementary split built
+entirely from published de-novo designs: **47 protein-ligand pairs**, each a designed protein plus a
+small molecule, with an experimental label.
 
 - **37 cognate binders** with a measured KD (pKd), from published de-novo campaigns.
 - **10 matched-specificity negatives**: the same designed proteins paired with a *wrong* ligand
   (confirmed non-binding). This makes the negatives hard: the protein is identical, only the ligand
   is wrong, so a predictor must read the interface, not the fold.
 
-Six predictor families are scored the same way for both cofolders, `pK = 6 - affinity_pred_value`
-(the OpenBind convention): **Boltz-2** (affinity head + iptm), **Nesso-1**, **Protenix-v2** (iptm,
-gpde, ranking), and the trivial **MW / cLogP** baselines any real signal must beat.
+Six predictor families are scored the same way, with both cofolders converted to `pK = 6 -
+affinity_pred_value`: **Boltz-2** (affinity head + iptm), **Nesso-1**, **Protenix-v2** (iptm, gpde,
+ranking), and the trivial **MW / cLogP** baselines any real signal must beat.
 
 ## Two tasks
 
@@ -25,7 +25,7 @@ baseline (left) and chance (right); the star is a leave-one-out combination of f
 **Ranking affinity magnitude is hard.** The dedicated affinity heads do not beat lipophilicity:
 Boltz-2 pK rho = +0.39, Nesso-1 pK = +0.33, versus cLogP = +0.40. Structural proxies edge it
 (Protenix / Boltz iptm ~ +0.48). Every CI is wide (n=37), so no single metric is clearly separated
-from cLogP. RMSE on pK is 1.3-1.5 here, versus Nesso's 0.86 on the natural EV-A71 target: a
+from cLogP. RMSE on pK is 1.3-1.5 here, versus Nesso's reported 0.86 on a natural-target benchmark: a
 distribution-shift gap.
 
 **Discriminating binding is easy.** The cofolders cleanly separate the cognate ligand from the wrong
@@ -65,7 +65,7 @@ python scripts/score.py
 python scripts/make_figure.py
 ```
 
-Layout follows the OpenBind EV-A71 2A benchmark:
+Layout:
 
 ```
 reference/experimental_reference_ground_truth.csv   id, is_binder, experimental_pKD
@@ -78,6 +78,5 @@ Predictions join to the reference by `id`; every `predictions/*.csv` is scored a
 ## Credit
 
 Predictors: [Boltz-2](https://github.com/jwohlwend/boltz), [Nesso-1](https://github.com/recursionpharma/nesso),
-[Protenix](https://github.com/bytedance/Protenix). Benchmark design follows the
-[OpenBind Consortium](https://github.com/OpenBind-Consortium) EV-A71 2A leaderboard. De-novo designs
-and labels are from the source papers cited per row in `data/bench47.json`.
+[Protenix](https://github.com/bytedance/Protenix). De-novo designs and labels are from the source
+papers cited per row (`source`, `source_url`) in `reference/system_reference.csv`.
