@@ -9,38 +9,42 @@ designs.
 - **10 matched negatives**: the same designed protein paired with a *wrong* ligand (confirmed
   non-binding), so a predictor has to read the interface, not just the fold.
 
-Six predictors, scored two ways (cofolders converted to `pK = 6 - affinity_pred_value`):
-[Boltz-2](https://github.com/jwohlwend/boltz) (affinity head + iptm),
-[Nesso-1](https://github.com/recursionpharma/nesso),
-[Protenix-v2](https://github.com/bytedance/Protenix) (iptm, gpde, ranking), and MW / cLogP baselines.
+Five model families, scored two ways (cofolder affinity heads converted to `pK = 6 -
+affinity_pred_value`): [Boltz-2](https://github.com/jwohlwend/boltz) (affinity head, ipTM, interface
+PAE), [Nesso-1](https://github.com/recursionpharma/nesso) (affinity head),
+[Protenix-v2](https://github.com/bytedance/Protenix) (ipTM, gPDE, ranking, interface PAE), and MW /
+cLogP baselines, for 15 metric columns in all.
 
 ## Results
 
 ![benchmark](figures/benchmark.png)
 
 Left panel: rank affinity among the 37 binders (Spearman vs pKd). Right panel: tell the correct
-ligand from the wrong one across all 47 (AUROC). Bars are 95% bootstrap CIs. The figure shows one
-metric per model plus the baselines; `score.py` reports all eleven.
+ligand from the wrong one across all 47 (AUROC). Bars are 95% bootstrap CIs. This shows one metric
+per model plus the baselines; the full leaderboard (all 15 metrics) is in
+[`figures/benchmark_full.png`](figures/benchmark_full.png), and `score.py` prints every metric.
 
 - **Ranking affinity is hard.** The dedicated affinity heads do not beat lipophilicity: Boltz-2
-  +0.39, Nesso-1 +0.33, versus cLogP +0.40. Structural confidence edges ahead (iptm ~+0.48). CIs are
-  wide at n=37.
+  +0.41, Nesso-1 +0.33, versus cLogP +0.40. Structural confidence edges ahead (Boltz-2 ipTM +0.54);
+  the interface-PAE metrics (min/mean ipae) cluster with it, none breaking out of the ~0.4-0.5 band.
+  CIs are wide at n=37.
 - **Discriminating binding is easy.** Cofolders separate the correct ligand from the wrong one
-  cleanly (Boltz-2 iptm AUROC 0.94), while the baselines sit at chance.
-- **Metrics combine.** A leave-one-out combination reaches +0.59 for ranking, above any single
-  metric; specificity does not improve over Boltz-2 iptm alone.
+  cleanly (Boltz-2 ipTM AUROC 0.93), while the baselines sit at chance.
+- **Metrics combine.** A leave-one-out combination reaches +0.56 for ranking, above any single
+  metric; specificity does not improve over Boltz-2 ipTM alone.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
-| rank pKd (Spearman) | +0.48 | +0.40 | **+0.59** |
-| tell right from wrong ligand (AUROC) | 0.94 | 0.44 | 0.83 |
+| rank pKd (Spearman) | +0.54 | +0.40 | **+0.56** |
+| tell right from wrong ligand (AUROC) | 0.93 | 0.44 | 0.83 |
 
 ## Caveats
 
 Small n (37 + 10): CIs are wide and orderings are suggestive. The 10 negatives are confirmed
 non-binders from ~6 designed proteins. The combination's edge over the best single metric is modest.
-The three cofolders share the AF3-style family, so they are not independent. Positive KDs come from
-mixed assays and are not cross-calibrated.
+The three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
+run-to-run diffusion-sampling variation (~0.05 Spearman); values here are from a single seeded fold.
+Positive KDs come from mixed assays and are not cross-calibrated.
 
 ## Layout
 

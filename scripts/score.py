@@ -12,7 +12,8 @@ import csv
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LOWER_BETTER = {"protenix-gpde"}                    # lower value = tighter (flip for rho/AUROC)
+LOWER_BETTER = {"protenix-gpde", "boltz-2-pae-min", "boltz-2-pae-mean",
+                "protenix-pae-min", "protenix-pae-mean"}   # lower = tighter (flip for rho/AUROC)
 PK_METHODS = {"boltz-2", "nesso-1"}                 # predicted_affinity in pK units -> RMSE meaningful
 COMBO = ("boltz-2", "nesso-1", "protenix-ligiptm", "clogp")
 
