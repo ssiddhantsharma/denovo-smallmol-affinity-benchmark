@@ -56,11 +56,12 @@ def main():
     fig, (a, b) = plt.subplots(1, 2, figsize=(10, 5.2))
     bars(a, reg, 0.40, "cLogP", "Spearman rho vs measured pKd", (-0.1, 0.85))
     bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
-    handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in ("aff", "prox", "base", "combo")]
-    a.legend(handles, [LABEL[c] for c in ("aff", "prox", "base", "combo")], fontsize=8.5,
-             loc="lower right", frameon=False)
+    cats = ("aff", "prox", "base", "combo")
+    handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
+    fig.legend(handles, [LABEL[c] for c in cats], fontsize=9, loc="lower center",
+               ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Affinity predictors on de-novo protein-small-molecule binders", fontsize=12)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.tight_layout(rect=(0, 0.06, 1, 0.95))
     out = ROOT / "figures" / "benchmark.png"
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print("saved", out)
