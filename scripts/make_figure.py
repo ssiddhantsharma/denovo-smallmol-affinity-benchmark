@@ -1,7 +1,7 @@
 """Two-panel benchmark figure: rank-affinity (Spearman, binders) and specificity (AUROC, all rows).
 
-Left: how well each method ranks measured pKd among the 37 binders (dashed = cLogP baseline, star =
-leave-one-out combination). Right: cognate vs wrong ligand (dashed = chance). Data + stats: score.py.
+Left: how well each method ranks measured pKd among the 37 binders (dotted = cLogP baseline, diamond
+= leave-one-out combination). Right: correct vs wrong ligand (dotted = chance). Stats: score.py.
 """
 
 from pathlib import Path
@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbind": "aff",
        "boltz-2-iptm": "prox", "protenix-iptm": "prox", "protenix-ligiptm": "prox",
        "protenix-gpde": "prox", "protenix-ranking": "prox", "clogp": "base", "molecular-weight": "base"}
-COL = {"aff": "#0072B2", "prox": "#E69F00", "base": "#999999"}
+COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8"}   # muted slate / ochre / stone
+ACCENT, REF, WHISK = "#8a5a72", "#7a746c", "#5b554e"            # plum accent, neutral refs
 LABEL = {"aff": "dedicated affinity head", "prox": "structural proxy", "base": "trivial baseline"}
 COMBO_RHO, COMBO_AUROC = 0.59, 0.83   # leave-one-out CV, from score.py
 
@@ -26,11 +27,11 @@ def bars(ax, data, ref, ref_label, xlabel, combo, xlim):
     n = len(data); ys = range(n)
     for y, (k, v, lo, hi) in zip(ys, data):
         ax.barh(y, v, color=COL[CAT[k]], height=0.66, zorder=2)
-        ax.plot([lo, hi], [y, y], color="#333333", lw=1.0, zorder=3)
-    ax.axvline(ref, ls="--", lw=1.2, color="#D55E00", zorder=1)
-    ax.text(ref, n - 0.4, f" {ref_label}", color="#D55E00", fontsize=8.5, ha="left", va="center")
-    ax.scatter([combo], [n + 0.15], marker="*", s=180, color="#009E73", zorder=4, clip_on=False)
-    ax.text(combo, n + 0.15, "  combination (LOO)", color="#009E73", fontsize=8.5, va="center")
+        ax.plot([lo, hi], [y, y], color=WHISK, lw=1.0, zorder=3)
+    ax.axvline(ref, ls=":", lw=1.3, color=REF, zorder=1)
+    ax.text(ref, n - 0.4, f" {ref_label}", color=REF, fontsize=8.5, ha="left", va="center")
+    ax.scatter([combo], [n + 0.15], marker="D", s=54, color=ACCENT, zorder=4, clip_on=False)
+    ax.text(combo, n + 0.15, "  combination (LOO)", color=ACCENT, fontsize=8.5, va="center")
     ax.set_yticks(list(ys)); ax.set_yticklabels([k for k, *_ in data], fontsize=9.5)
     ax.set_ylim(-0.7, n + 0.7)
     ax.set_xlabel(xlabel, fontsize=9.5); ax.set_xlim(*xlim)
@@ -53,7 +54,7 @@ def main():
 
     fig, (a, b) = plt.subplots(1, 2, figsize=(11.5, 6.6))
     bars(a, reg, 0.40, "cLogP", "Spearman rho vs measured pKd  (37 binders)", COMBO_RHO, (-0.2, 0.85))
-    bars(b, spec, 0.5, "chance", "AUROC: cognate vs wrong ligand  (47)", COMBO_AUROC, (0.0, 1.05))
+    bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand  (47)", COMBO_AUROC, (0.0, 1.05))
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in ("aff", "prox", "base")]
     a.legend(handles, [LABEL[c] for c in ("aff", "prox", "base")], fontsize=8.5,
              loc="lower right", frameon=False)

@@ -3,7 +3,7 @@
 Joins reference/experimental_reference_ground_truth.csv with every predictions/*_predictions.csv
 (by id) and evaluates:
   regression   on the 37 binders: does a method rank measured pKd? (Spearman/Pearson/RMSE + CI)
-  specificity  on all 47: can a method tell the cognate ligand from the wrong one? (AUROC)
+  specificity  on all 47: can a method tell the correct ligand from the wrong one? (AUROC)
   combine      leave-one-out CV: do methods combine to beat the best single one?
 """
 
@@ -99,7 +99,7 @@ def regression(rows, methods):
 
 
 def specificity(rows, methods):
-    print(f"\n== Specificity: cognate vs wrong ligand (AUROC, n={len(rows)}) ==")
+    print(f"\n== Specificity: correct vs wrong ligand (AUROC, n={len(rows)}) ==")
     print(f"{'method':20s}{'AUROC [95% CI]':>22s}")
     for m in methods:
         v = [(r[m], r["is_binder"]) for r in rows if r.get(m) is not None]
