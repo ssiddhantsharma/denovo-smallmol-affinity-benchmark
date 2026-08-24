@@ -37,13 +37,10 @@ metric per model plus the baselines; `score.py` reports all eleven.
 
 ## Caveats
 
-Small n (37 binders, 10 negatives), so CIs are wide and single-metric orderings are suggestive. The
-10 negatives are experimentally confirmed non-binders but come from only ~6 designed proteins; the
-baselines failing (AUROC 0.44 / 0.24) rules out trivial ligand-property separation, but the
-specificity result is still suggestive. The combination's gain over the best single metric is modest
-and comes from adding a structural proxy (affinity heads plus cLogP alone reach only +0.30). The
-three cofolders share the AF3-style family and are not independent. Positive KDs come from mixed
-assays (ITC / SPR / MST / fluorescence) and are not cross-calibrated.
+Small n (37 + 10): CIs are wide and orderings are suggestive. The 10 negatives are confirmed
+non-binders from ~6 designed proteins. The combination's edge over the best single metric is modest.
+The three cofolders share the AF3-style family, so they are not independent. Positive KDs come from
+mixed assays and are not cross-calibrated.
 
 ## Layout
 
