@@ -30,19 +30,21 @@ per model plus the baselines; the full leaderboard (all 15 metrics) is in
   CIs are wide at n=37.
 - **Discriminating binding is easy.** Cofolders separate the correct ligand from the wrong one
   cleanly (Boltz-2 ipTM AUROC 0.93), while the baselines sit at chance.
-- **Metrics combine.** A leave-one-out combination reaches +0.56 for ranking, above any single
-  metric; specificity does not improve over Boltz-2 ipTM alone.
+- **Combining does not help.** A leave-one-out combination of four metrics (+0.56) is statistically
+  tied with the best single metric, Boltz-2 ipTM (+0.54): the bootstrap CI on the difference is
+  [-0.25, +0.29], spanning 0. For specificity it trails Boltz-2 ipTM (0.83 vs 0.93). No evidence the
+  metrics carry complementary signal here.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
-| rank pKd (Spearman) | +0.54 | +0.40 | **+0.56** |
+| rank pKd (Spearman) | +0.54 | +0.40 | +0.56 (tied) |
 | tell right from wrong ligand (AUROC) | 0.93 | 0.44 | 0.83 |
 
 ## Caveats
 
 Small n (37 + 10): CIs are wide and orderings are suggestive. The 10 negatives are confirmed
-non-binders from ~6 designed proteins. The combination's edge over the best single metric is modest.
-The three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
+non-binders from ~6 designed proteins. The combination does not beat the best single metric (tied
+within bootstrap noise). The three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
 run-to-run diffusion-sampling variation (~0.05 Spearman); values here are from a single seeded fold.
 Positive KDs come from mixed assays and are not cross-calibrated.
 
