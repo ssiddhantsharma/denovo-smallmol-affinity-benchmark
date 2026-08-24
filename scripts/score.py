@@ -109,8 +109,9 @@ def specificity(rows, methods):
         print(f"{m:20s}{f'{a:.2f} [{lo:.2f},{up:.2f}]':>22s}")
 
 
-def combine(rows):
-    """Leave-one-out CV: do methods combine to beat the best single one? Small n, so LOO only."""
+def combine_loo(rows):
+    """Leave-one-out CV predictions for the fixed COMBO feature set. Returns (reg_pred, reg_truth),
+    (spec_pred, spec_truth). Small n, so LOO only."""
     import numpy as np
     from sklearn.linear_model import LinearRegression, LogisticRegression
     from sklearn.preprocessing import StandardScaler
@@ -124,15 +125,21 @@ def combine(rows):
             m = model().fit(sc.transform(X[tr]), y[tr])
             pred[i] = (m.predict_proba(sc.transform(X[i:i + 1]))[0, 1]
                        if hasattr(m, "predict_proba") else m.predict(sc.transform(X[i:i + 1]))[0])
-        return pred
+        return list(pred)
 
     ok = [r for r in rows if all(r.get(f) is not None for f in COMBO)]
     b = [r for r in ok if r["is_binder"] == 1 and r["pKd"] is not None]
+    reg = (loo(b, [r["pKd"] for r in b], LinearRegression), [r["pKd"] for r in b])
+    spec = (loo(ok, [r["is_binder"] for r in ok], lambda: LogisticRegression(max_iter=1000)),
+            [r["is_binder"] for r in ok])
+    return reg, spec
+
+
+def combine(rows):
+    (rp, ry), (sp, sy) = combine_loo(rows)
     print(f"\n== Combine ({'+'.join(COMBO)}), leave-one-out CV ==")
-    p = loo(b, [r["pKd"] for r in b], LinearRegression)
-    print(f"regression LOO Spearman rho = {spearman(list(p), [r['pKd'] for r in b]):+.2f}  (n={len(b)})")
-    pc = loo(ok, [r["is_binder"] for r in ok], lambda: LogisticRegression(max_iter=1000))
-    print(f"specificity LOO AUROC       = {auroc(list(pc), [r['is_binder'] for r in ok]):.2f}  (n={len(ok)})")
+    print(f"regression LOO Spearman rho = {spearman(rp, ry):+.2f}  (n={len(ry)})")
+    print(f"specificity LOO AUROC       = {auroc(sp, sy):.2f}  (n={len(sy)})")
 
 
 def main():
