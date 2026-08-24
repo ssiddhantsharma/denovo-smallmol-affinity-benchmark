@@ -19,7 +19,7 @@ SHOW = [("boltz-2", "Boltz-2", "aff"), ("nesso-1", "Nesso-1", "aff"),
         ("boltz-2-iptm", "Boltz-2 ipTM", "prox"), ("protenix-iptm", "Protenix ipTM", "prox"),
         ("clogp", "cLogP", "base"), ("molecular-weight", "MW", "base")]
 COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8"}   # muted slate / ochre / stone
-ACCENT, REF, WHISK = "#8a5a72", "#7a746c", "#5b554e"
+ACCENT, REF, WHISK = "#8a5a72", "#8f8880", "#9b938a"            # whiskers light so bars read first
 LABEL = {"aff": "dedicated affinity head", "prox": "structural proxy", "base": "trivial baseline"}
 COMBO_RHO = 0.59   # leave-one-out CV, from score.py
 
@@ -28,8 +28,8 @@ def bars(ax, data, ref, ref_label, xlabel, xlim, combo=None):
     data.sort(key=lambda t: t[1])
     n = len(data); ys = range(n)
     for y, (lab, v, lo, hi, cat) in zip(ys, data):
-        ax.barh(y, v, color=COL[cat], height=0.6, zorder=2)
-        ax.plot([lo, hi], [y, y], color=WHISK, lw=1.1, zorder=3)
+        ax.barh(y, v, color=COL[cat], height=0.58, zorder=3)
+        ax.plot([lo, hi], [y, y], color=WHISK, lw=0.9, alpha=0.9, zorder=2)
     ax.axvline(ref, ls=":", lw=1.3, color=REF, zorder=1)
     ax.text(ref, n - 0.35, f" {ref_label}", color=REF, fontsize=9, ha="left", va="center")
     if combo is not None:
@@ -53,7 +53,7 @@ def main():
         sx, sl = zip(*[(r[m], r["is_binder"]) for r in rows if r.get(m) is not None])
         spec.append((lab, auroc(list(sx), list(sl)), *bootstrap_ci(list(sx), list(sl), auroc), cat))
 
-    fig, (a, b) = plt.subplots(1, 2, figsize=(10, 4.6))
+    fig, (a, b) = plt.subplots(1, 2, figsize=(10, 5.0))
     bars(a, reg, 0.40, "cLogP", "Spearman rho vs measured pKd", (-0.1, 0.8), combo=COMBO_RHO)
     bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in ("aff", "prox", "base")]
