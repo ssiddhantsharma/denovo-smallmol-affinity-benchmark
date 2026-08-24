@@ -52,7 +52,7 @@ def run_boltz():
         (yd / f"c{i:02d}.yaml").write_text(yaml_for(r["sequence"], r["smiles"], True))
     subprocess.run([BOLTZ, "predict", str(yd), "--out_dir", str(WORK / "boltz_out"),
                     "--recycling_steps", "3", "--diffusion_samples", "1", "--override",
-                    "--no_kernels", "--devices", "1"],
+                    "--no_kernels", "--write_full_pae", "--devices", "1"],
                    env={**os.environ, "CUDA_VISIBLE_DEVICES": GPU}, check=True)
     p = WORK / "boltz_out" / "boltz_results_boltz_yaml" / "predictions"
     pk, pb, it = {}, {}, {}
