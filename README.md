@@ -28,8 +28,6 @@ per model plus the baselines; the full leaderboard (all 15 metrics) is in
   +0.41, Nesso-1 +0.33, versus cLogP +0.40. Structural confidence edges ahead (Boltz-2 ipTM +0.54);
   the interface-PAE metrics (min/mean ipae) cluster with it, none breaking out of the ~0.4-0.5 band.
   CIs are wide at n=37.
-- **Discriminating binding is easy.** Cofolders separate the correct ligand from the wrong one
-  cleanly (Boltz-2 ipTM AUROC 0.93), while the baselines sit at chance.
 - **Combining does not help.** A leave-one-out combination of four metrics (+0.56) is statistically
   tied with the best single metric, Boltz-2 ipTM (+0.54): the bootstrap CI on the difference is
   [-0.25, +0.29], spanning 0. For specificity it trails Boltz-2 ipTM (0.83 vs 0.93). No evidence the
