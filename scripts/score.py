@@ -136,11 +136,24 @@ def combine_loo(rows):
     return reg, spec
 
 
-def combine(rows):
+def combine(rows, best="boltz-2-iptm"):
+    import random
     (rp, ry), (sp, sy) = combine_loo(rows)
     print(f"\n== Combine ({'+'.join(COMBO)}), leave-one-out CV ==")
     print(f"regression LOO Spearman rho = {spearman(rp, ry):+.2f}  (n={len(ry)})")
     print(f"specificity LOO AUROC       = {auroc(sp, sy):.2f}  (n={len(sy)})")
+    # is the combination actually better than the best single metric? paired bootstrap of the difference.
+    ok = [r for r in rows if all(r.get(f) is not None for f in COMBO)]
+    b = [r for r in ok if r["is_binder"] == 1 and r["pKd"] is not None and r.get(best) is not None]
+    ref = [r[best] for r in b]
+    rng = random.Random(0); n = len(b); diffs = []
+    for _ in range(2000):
+        idx = [rng.randrange(n) for _ in range(n)]
+        c = [rp[i] for i in idx]; s = [ref[i] for i in idx]; t = [ry[i] for i in idx]
+        diffs.append(spearman(c, t) - spearman(s, t))
+    diffs.sort()
+    lo, hi = diffs[int(0.025 * len(diffs))], diffs[int(0.975 * len(diffs))]
+    print(f"combination minus best single ({best}) rho, 95% CI = [{lo:+.2f}, {hi:+.2f}]  (spans 0 = not better)")
 
 
 def main():
