@@ -7,7 +7,7 @@ designs.
 **47 protein-ligand pairs:**
 - **37 binders** with a measured KD (pKd).
 - **10 matched negatives**: the same designed protein paired with a *wrong* ligand (confirmed
-  non-binding), so a predictor has to read the interface, not just the fold.
+  non-binding), so a predictor has to read the interface, not the fold alone.
 
 Five model families, scored two ways (cofolder affinity heads converted to `pK = 6 -
 affinity_pred_value`): [Boltz-2](https://github.com/jwohlwend/boltz) (affinity head, ipTM, interface
