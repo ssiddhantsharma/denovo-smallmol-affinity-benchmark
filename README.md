@@ -41,7 +41,11 @@ per model plus the baselines; the full leaderboard (all 15 metrics) is in
 ## Caveats
 
 Small n (37 + 10): CIs are wide and orderings are suggestive. The 10 negatives are confirmed
-non-binders from ~6 designed proteins. The combination does not beat the best single metric (tied
+non-binders from ~6 designed proteins. This small n reflects the field, not the search: a systematic
+survey of the de novo literature turns up essentially no further designed binders of *organic* small
+molecules with a precise measured KD — the remaining de novo binders are metallo-cofactor systems (heme /
+Zn-porphyrin / Zn-chlorophyll maquettes) or designed pockets grafted onto natural scaffolds. The set is
+therefore close to the available universe rather than a sample of it. The combination does not beat the best single metric (tied
 within bootstrap noise). The three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
 run-to-run diffusion-sampling variation (~0.05 Spearman); values here are from a single seeded fold.
 Positive KDs come from mixed assays and are not cross-calibrated.
