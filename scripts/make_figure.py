@@ -35,10 +35,10 @@ def stats(rows, methods):
     reg, spec = [], []
     for m in methods:
         sgn = -1 if m in LOWER_BETTER else 1
-        bx, by = zip(*[(sgn * r[m], r["pKd"]) for r in binders if r.get(m) is not None])
+        bx, by = zip(*[(sgn * r[m], r["pKd"]) for r in binders if r.get(m) is not None], strict=True)
         reg.append((PRETTY.get(m, m), spearman(list(bx), list(by)),
                     *bootstrap_ci(list(bx), list(by), spearman), CAT[m]))
-        sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in rows if r.get(m) is not None])
+        sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in rows if r.get(m) is not None], strict=True)
         spec.append((PRETTY.get(m, m), auroc(list(sx), list(sl)),
                      *bootstrap_ci(list(sx), list(sl), auroc), CAT[m]))
     (rp, ry), (sp, sy) = combine_loo(rows)
@@ -50,7 +50,7 @@ def stats(rows, methods):
 def bars(ax, data, ref, ref_label, xlabel, xlim):
     data.sort(key=lambda t: t[1])
     n = len(data)
-    for y, (lab, v, lo, hi, cat) in enumerate(data):
+    for y, (_lab, v, lo, hi, cat) in enumerate(data):
         ax.barh(y, v, color=COL[cat], height=0.62, zorder=3)
         ax.plot([lo, hi], [y, y], color=WHISK, lw=0.9, alpha=0.9, zorder=2)
     ax.axvline(ref, ls=":", lw=1.3, color=REF, zorder=1)

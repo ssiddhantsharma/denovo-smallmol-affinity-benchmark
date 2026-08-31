@@ -8,6 +8,7 @@ Joins reference/experimental_reference_ground_truth.csv with every predictions/*
 """
 
 import argparse
+import contextlib
 import csv
 from pathlib import Path
 
@@ -47,24 +48,24 @@ def _rank(v):
 
 def spearman(xs, ys):
     rx, ry = _rank(xs), _rank(ys); n = len(xs)
-    return 1 - 6 * sum((a - b) ** 2 for a, b in zip(rx, ry)) / (n * (n * n - 1))
+    return 1 - 6 * sum((a - b) ** 2 for a, b in zip(rx, ry, strict=True)) / (n * (n * n - 1))
 
 
 def pearson(xs, ys):
     n = len(xs); mx = sum(xs) / n; my = sum(ys) / n
-    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
     sx = sum((x - mx) ** 2 for x in xs) ** 0.5; sy = sum((y - my) ** 2 for y in ys) ** 0.5
     return cov / (sx * sy) if sx and sy else float("nan")
 
 
 def rmse(xs, ys):
-    return (sum((x - y) ** 2 for x, y in zip(xs, ys)) / len(xs)) ** 0.5
+    return (sum((x - y) ** 2 for x, y in zip(xs, ys, strict=True)) / len(xs)) ** 0.5
 
 
 def auroc(scores, labels):
     """P(score(pos) > score(neg)); labels 1=positive. Ties count 0.5."""
-    pos = [s for s, l in zip(scores, labels) if l == 1]
-    neg = [s for s, l in zip(scores, labels) if l == 0]
+    pos = [s for s, l in zip(scores, labels, strict=True) if l == 1]
+    neg = [s for s, l in zip(scores, labels, strict=True) if l == 0]
     if not pos or not neg:
         return None
     wins = sum((p > n) + 0.5 * (p == n) for p in pos for n in neg)
@@ -76,10 +77,8 @@ def bootstrap_ci(xs, ys, stat, n_boot=2000, seed=0):
     rng = random.Random(seed); n = len(xs); out = []
     for _ in range(n_boot):
         idx = [rng.randrange(n) for _ in range(n)]
-        try:
+        with contextlib.suppress(ZeroDivisionError, ValueError):
             out.append(stat([xs[i] for i in idx], [ys[i] for i in idx]))
-        except (ZeroDivisionError, ValueError):
-            pass
     out.sort()
     return out[int(0.025 * len(out))], out[int(0.975 * len(out))]
 
@@ -92,7 +91,7 @@ def regression(rows, methods):
         v = [(r[m], r["pKd"]) for r in b if r.get(m) is not None]
         if len(v) < 3:
             continue
-        xs, ys = map(list, zip(*v)); sgn = -1 if m in LOWER_BETTER else 1
+        xs, ys = map(list, zip(*v, strict=True)); sgn = -1 if m in LOWER_BETTER else 1
         rho = sgn * spearman(xs, ys)
         lo, up = bootstrap_ci([sgn * x for x in xs], ys, spearman)
         rm = f"{rmse(xs, ys):.2f}" if m in PK_METHODS else "-"
@@ -104,7 +103,7 @@ def specificity(rows, methods):
     print(f"{'method':20s}{'AUROC [95% CI]':>22s}")
     for m in methods:
         v = [(r[m], r["is_binder"]) for r in rows if r.get(m) is not None]
-        sc, lab = map(list, zip(*v)); sgn = -1 if m in LOWER_BETTER else 1
+        sc, lab = map(list, zip(*v, strict=True)); sgn = -1 if m in LOWER_BETTER else 1
         a = auroc([sgn * x for x in sc], lab)
         lo, up = bootstrap_ci([sgn * x for x in sc], lab, auroc)
         print(f"{m:20s}{f'{a:.2f} [{lo:.2f},{up:.2f}]':>22s}")

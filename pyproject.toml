@@ -2,4 +2,7 @@
 line-length = 100
 
 [tool.ruff.lint]
+# F=pyflakes bugs, I=import-sort, B=bugbear footguns, SIM=simplify, UP=pyupgrade.
+# Omit full E: E501/E70x are line-length/semicolon style noise.
+select = ["F", "I", "B", "SIM", "UP"]
 ignore = ["E741"]
