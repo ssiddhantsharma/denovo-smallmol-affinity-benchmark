@@ -2,8 +2,8 @@
   benchmark.png       select metrics (README face): affinity heads vs a proxy vs baselines + combination
   benchmark_full.png  every metric score.py computes
 
-Left panel ranks measured pKd (Spearman among the 37 binders; dotted = cLogP). Right panel tells the
-correct ligand from the wrong one (AUROC over all 47; dotted = chance). Bars are 95% bootstrap CIs.
+Left panel ranks measured pKd (Spearman among the binders; dotted = cLogP). Right panel tells the
+correct ligand from the wrong one (AUROC over all pairs; dotted = chance). Bars are 95% bootstrap CIs.
 The leave-one-out combination is its own bar. Stats: score.py.
 """
 
@@ -65,7 +65,8 @@ def bars(ax, data, ref, ref_label, xlabel, xlim):
 
 def render(reg, spec, out, height):
     fig, (a, b) = plt.subplots(1, 2, figsize=(10, height))
-    bars(a, reg, 0.40, "cLogP", "Spearman rho vs measured pKd", (-0.2, 0.85))
+    clogp_rho = next(v for lab, v, *_ in reg if lab == "cLogP")
+    bars(a, reg, clogp_rho, "cLogP", "Spearman rho vs measured pKd", (-0.2, 0.85))
     bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
     cats = ("aff", "prox", "base", "combo")
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]

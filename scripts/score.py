@@ -2,8 +2,8 @@
 
 Joins reference/experimental_reference_ground_truth.csv with every predictions/*_predictions.csv
 (by id) and evaluates:
-  regression   on the 37 binders: does a method rank measured pKd? (Spearman/Pearson/RMSE + CI)
-  specificity  on all 47: can a method tell the correct ligand from the wrong one? (AUROC)
+  regression   on the binders: does a method rank measured pKd? (Spearman/Pearson/RMSE + CI)
+  specificity  on all pairs: can a method tell the correct ligand from the wrong one? (AUROC)
   combine      leave-one-out CV: do methods combine to beat the best single one?
 """
 
