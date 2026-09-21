@@ -32,6 +32,12 @@ per model plus the baselines; the full leaderboard (all 15 metrics) is in
   tied with the best single metric, Boltz-2 ipTM (+0.42): the bootstrap CI on the difference is
   [-0.31, +0.23], spanning 0. For specificity it trails Boltz-2 ipTM (0.84 vs 0.91). No evidence the
   metrics carry complementary signal here.
+- **A sequence-native affinity FM fails too — the failure is the data regime, not co-folding.**
+  dtSFM (`dtsfm-cosine`), a 714k-pair drug–target specificity foundation model, drops to chance on de
+  novo: AUROC 0.53 (right vs wrong ligand) and Spearman +0.19 (pKd), *below* the cLogP baseline —
+  even though its featurization validates on in-distribution natural pairs (true-vs-shuffled AUROC
+  0.863; see `scripts/run_dtsfm.py`, which gates on that positive control before scoring). So neither a
+  structural co-folder nor a sequence-native FM escapes the natural→de-novo distribution shift.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
