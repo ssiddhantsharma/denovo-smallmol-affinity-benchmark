@@ -20,14 +20,16 @@ CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbin
        "boltz-2-iptm": "prox", "boltz-2-pae-min": "prox", "boltz-2-pae-mean": "prox",
        "protenix-iptm": "prox", "protenix-ligiptm": "prox", "protenix-gpde": "prox",
        "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
-       "clogp": "base", "molecular-weight": "base", "combination": "combo"}
-COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8", "combo": "#8a5a72"}
+       "clogp": "base", "molecular-weight": "base", "combination": "combo",
+       "dtsfm-cosine": "seq"}
+COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8", "combo": "#8a5a72", "seq": "#7B4FA0"}
 REF, WHISK = "#8f8880", "#9b938a"
 LABEL = {"aff": "dedicated affinity head", "prox": "structural proxy",
-         "base": "trivial baseline", "combo": "combination (LOO)"}
+         "base": "trivial baseline", "combo": "combination (LOO)", "seq": "sequence-native FM"}
 SELECT = ["boltz-2", "nesso-1", "boltz-2-iptm", "protenix-iptm", "clogp", "molecular-weight"]
 PRETTY = {"boltz-2": "Boltz-2", "nesso-1": "Nesso-1", "boltz-2-iptm": "Boltz-2 ipTM",
-          "protenix-iptm": "Protenix ipTM", "clogp": "cLogP", "molecular-weight": "MW"}
+          "protenix-iptm": "Protenix ipTM", "clogp": "cLogP", "molecular-weight": "MW",
+          "dtsfm-cosine": "dtSFM"}
 
 
 def stats(rows, methods):
@@ -68,10 +70,11 @@ def render(reg, spec, out, height):
     clogp_rho = next(v for lab, v, *_ in reg if lab == "cLogP")
     bars(a, reg, clogp_rho, "cLogP", "Spearman rho vs measured pKd", (-0.2, 0.85))
     bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
-    cats = ("aff", "prox", "base", "combo")
+    present = {d[4] for d in reg}
+    cats = [c for c in ("aff", "prox", "seq", "base", "combo") if c in present]
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
     fig.legend(handles, [LABEL[c] for c in cats], fontsize=8.5, loc="lower center",
-               ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.0))
+               ncol=len(cats), frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Affinity predictors on de-novo protein-small-molecule binders", fontsize=12)
     fig.tight_layout(rect=(0, 0.05, 1, 0.96))
     fig.savefig(out, dpi=150, bbox_inches="tight")
