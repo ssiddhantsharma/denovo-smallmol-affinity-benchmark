@@ -8,4 +8,12 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install ruff
-      - run: ruff check scripts
+      - run: ruff check scripts tests
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install numpy scikit-learn pytest
+      - run: pytest -q

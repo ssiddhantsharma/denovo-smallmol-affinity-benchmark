@@ -1,5 +1,7 @@
 # de-novo small-molecule affinity benchmark
 
+[![ci](https://github.com/ssiddhantsharma/denovo-smallmol-affinity-benchmark/actions/workflows/ci.yml/badge.svg)](https://github.com/ssiddhantsharma/denovo-smallmol-affinity-benchmark/actions/workflows/ci.yml)
+
 Do protein-ligand affinity predictors work on **de-novo designed** binders? Affinity leaderboards
 score them on natural targets; this is a small complementary split built from published de-novo
 designs.
@@ -99,6 +101,17 @@ predictions/<method>_predictions.csv                 method, id, predicted_affin
 ```
 
 Every `predictions/*.csv` joins to the reference by `id` and is scored automatically.
+
+## Tests
+
+```
+pip install numpy scikit-learn pytest
+pytest -q
+```
+
+`tests/` covers the scoring statistics (Spearman, Pearson, AUROC, RMSE), dataset integrity
+(61 systems = 50 binders + 11 negatives, every prediction joins to the ground truth), and that
+`score.py` runs end to end. CI (ruff lint + pytest) runs on every push.
 
 ## Reproduce
 

@@ -32,9 +32,8 @@ ESM = "facebook/esm2_t33_650M_UR50D"
 
 def load_encoder(dtsfm_src, device):
     sys.path.insert(0, str(dtsfm_src))
-    from omegaconf import OmegaConf
-
     from calm.encoder.model_v3 import CALMEncoderV3
+    from omegaconf import OmegaConf
     ckpt_path = hf_hub_download("SFM-BIIE-ETHZ/dtSFM-v3", "encoder_b3_epoch010.pt")
     ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
     cfg = ckpt.get("config")
@@ -90,7 +89,8 @@ class Scorer:
 def gate(scorer, n_control):
     """True in-distribution pairs must score well above shuffled pairs."""
     p = hf_hub_download("SFM-BIIE-ETHZ/dtSFM-v3", "metadata_v3.csv")
-    rows = list(csv.DictReader(open(p)))
+    with open(p) as f:
+        rows = list(csv.DictReader(f))
     rows = [r for r in rows if r.get("drug_smiles") and r.get("protein_seq")
             and r.get("affinity_log") and len(r["protein_seq"]) <= 1000]
     rows.sort(key=lambda r: float(r["affinity_log"]), reverse=True)   # strongest binders first
@@ -133,7 +133,8 @@ def main():
         print("\nFEATURIZATION GATE FAILED — not writing predictions. My glue is wrong, stopping.")
         sys.exit(2)
 
-    sysrows = list(csv.DictReader(open(Path(a.bench) / "reference/system_reference.csv")))
+    with open(Path(a.bench) / "reference/system_reference.csv") as f:
+        sysrows = list(csv.DictReader(f))
     print(f"\n=== scoring {len(sysrows)} benchmark systems ===")
     out = []
     for r in sysrows:
