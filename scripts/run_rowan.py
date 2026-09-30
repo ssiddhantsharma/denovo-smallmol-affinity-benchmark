@@ -145,32 +145,57 @@ def write_pred(method_col, values):
     print(f"WROTE {method_col}_predictions.csv", flush=True)
 
 
-def submit(methods, ok, max_credits):
+def submit(methods, ok, max_credits, draft=False):
     import rowan
 
     settings = {"sqm": rowan.SinglePointEnergySettings, "gnina": rowan.GninaAffinitySettings,
                 "aevplig": rowan.AEVPLIGAffinitySettings}
-    folder = rowan.get_folder("denovo-smallmol-benchmark")
+    try:  # folders are UI grouping only; some rowan-python builds mis-define the pydantic model
+        folder = rowan.get_folder("denovo-smallmol-benchmark")
+    except Exception as e:  # noqa: BLE001 - grouping is optional, never block the science
+        print(f"  (folder grouping unavailable: {type(e).__name__}; submitting to account root)")
+        folder = None
+
+    def prepared_protein(protein_uuid, sid):
+        # SQM (MOZYME) needs a protonated, closed-shell protein; the co-folded PDB has no H, so
+        # geometry-based charge inference yields odd-electron pockets. Protonate at pH 7.4 first.
+        prep = rowan.submit_protein_preparation_workflow(
+            protein=protein_uuid, protonation_method="openmm", pH=7.4,
+            name=f"prep {sid}", folder=folder, max_credits=max_credits)
+        return prep.result().prepared_protein_uuid
+
     for key in methods:
         col, _, sqm = METHODS[key]
         vals = {}
         for row in ok:
             sid, pp, ls = row
-            protein = rowan.upload_protein(sid, str(pp))
-            ligand = next(iter(rowan.load_named_ligands(str(ls)).values()))
-            wf = rowan.submit_binding_affinity_workflow(
-                protein=protein.uuid,
-                ligand_structures=[ligand],
-                binding_affinity_settings=settings[key](),
-                name=f"benchmark {col} {sid}",
-                folder=folder,
-                max_credits=max_credits,
-            )
-            score = wf.result().scores[0]
-            raw = None if score is None else score.binding_affinity
-            vals[sid] = None if raw is None else (-raw if sqm else raw)
-            print(f"  {col} {sid}: {raw}", flush=True)
-        write_pred(col, vals)
+            try:
+                protein = rowan.upload_protein(sid, str(pp))
+                target = protein.uuid
+                if sqm and not draft:              # SQM only; ML scorers use the raw pose
+                    target = prepared_protein(protein.uuid, sid)
+                ligand = next(iter(rowan.load_named_ligands(str(ls)).values()))
+                wf = rowan.submit_binding_affinity_workflow(
+                    protein=target,
+                    ligand_structures=[ligand],
+                    binding_affinity_settings=settings[key](),
+                    name=f"benchmark {col} {sid}",
+                    folder=folder,
+                    max_credits=max_credits,
+                    is_draft=draft,
+                )
+                if draft:
+                    print(f"  DRAFT {col} {sid}: workflow {wf.uuid} created (not executed)", flush=True)
+                    continue
+                score = wf.result().scores[0]
+                raw = None if score is None else score.binding_affinity
+                vals[sid] = None if raw is None else (-raw if sqm else raw)
+                print(f"  {col} {sid}: {raw}", flush=True)
+            except Exception as e:  # noqa: BLE001 - surface per-system failure, keep the batch going
+                vals[sid] = None
+                print(f"  {col} {sid}: FAILED ({type(e).__name__}: {str(e)[:140]})", flush=True)
+        if not draft:
+            write_pred(col, vals)
 
 
 def main():
@@ -181,6 +206,8 @@ def main():
     ap.add_argument("--submit", action="store_true", help="actually call the Rowan API (needs ROWAN_API_KEY)")
     ap.add_argument("--max-credits", type=int, default=None, help="hard credit cap per workflow")
     ap.add_argument("--limit", type=int, default=None, help="use only the first N systems (smoke test)")
+    ap.add_argument("--draft", action="store_true",
+                    help="with --submit: create is_draft workflows (validate the full path, no execution, no credits)")
     args = ap.parse_args()
     methods = [m.strip() for m in args.methods.split(",") if m.strip()]
 
@@ -201,7 +228,7 @@ def main():
         return
     if not os.environ.get("ROWAN_API_KEY"):
         raise SystemExit("--submit needs ROWAN_API_KEY in the environment")
-    submit(methods, ok, args.max_credits)
+    submit(methods, ok, args.max_credits, draft=args.draft)
 
 
 if __name__ == "__main__":
