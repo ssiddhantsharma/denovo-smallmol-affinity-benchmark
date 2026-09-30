@@ -1,10 +1,10 @@
 # de-novo small-molecule affinity benchmark
 
-Do protein–ligand affinity predictors work on **de-novo designed** binders? Affinity leaderboards
+Do protein-ligand affinity predictors work on **de-novo designed** binders? Affinity leaderboards
 score them on natural targets; this is a small complementary split built from published de-novo
 designs.
 
-**61 protein–ligand pairs:**
+**61 protein-ligand pairs:**
 - **50 binders** with a measured KD (pKd).
 - **11 matched negatives**: the same designed protein paired with a *wrong* ligand (confirmed
   non-binding), so a predictor has to read the interface, not the fold alone.
@@ -23,18 +23,18 @@ per model plus the baselines; the full leaderboard (all metrics) is in
 
 - **Ranking affinity is hard.** The dedicated affinity heads do not beat lipophilicity: Boltz-2
   +0.30, Nesso-1 +0.27, versus cLogP +0.35. Structural confidence edges ahead (Boltz-2 ipTM +0.42);
-  the interface-PAE metrics (min/mean ipae) cluster with it, none breaking out of the ~0.3–0.4 band.
-  CIs are wide at n=50.
+  the interface-PAE metrics (min/mean ipae) cluster with it, none breaking out of the 0.3 to 0.4
+  band. CIs are wide at n=50.
 - **Combining does not help.** A leave-one-out combination of four metrics (+0.37) is statistically
   tied with the best single metric, Boltz-2 ipTM (+0.42): the bootstrap CI on the difference is
   [-0.31, +0.23], spanning 0. For specificity it trails Boltz-2 ipTM (0.84 vs 0.91). No evidence the
   metrics carry complementary signal here.
-- **A sequence-native affinity FM fails too — the failure is the data regime, not co-folding.**
-  dtSFM (`dtsfm-cosine`), a 714k-pair drug–target specificity foundation model, drops to chance on de
-  novo: AUROC 0.53 (right vs wrong ligand) and Spearman +0.19 (pKd), *below* the cLogP baseline —
-  even though its featurization validates on in-distribution natural pairs (true-vs-shuffled AUROC
-  0.863; see `scripts/run_dtsfm.py`, which gates on that positive control before scoring). So neither a
-  structural co-folder nor a sequence-native FM escapes the natural→de-novo distribution shift.
+- **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
+  dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, drops to chance on de
+  novo: AUROC 0.53 (right vs wrong ligand) and Spearman +0.19 (pKd), *below* the cLogP baseline. Yet
+  its featurization validates on in-distribution natural pairs (true-vs-shuffled AUROC 0.863; see
+  `scripts/run_dtsfm.py`, which gates on that positive control before scoring). So neither a
+  structural co-folder nor a sequence-native FM escapes the natural-to-de-novo distribution shift.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
@@ -46,52 +46,45 @@ per model plus the baselines; the full leaderboard (all metrics) is in
 Small n (50 + 11): CIs are wide and orderings are suggestive. The 11 negatives are confirmed
 non-binders from a handful of designed proteins. This small n reflects the field, not the search: a
 systematic survey of the de novo literature turns up essentially no further designed binders of
-*organic* small molecules with a precise measured KD — the remaining de novo binders are
-metallo-cofactor systems (heme / Zn-porphyrin / Zn-chlorophyll maquettes) or designed pockets
-grafted onto natural scaffolds. The set is therefore close to the available universe rather than a
-sample of it. The three cofolders share the AF3-style family, so they are not independent. Cofolder
-metrics carry run-to-run diffusion-sampling variation (~0.05 Spearman); values here are from a single
-seeded fold. Positive KDs come from mixed assays and are not cross-calibrated.
+*organic* small molecules with a precise measured KD. The remaining de novo binders are
+metallo-cofactor systems (heme, Zn-porphyrin, Zn-chlorophyll maquettes) or designed pockets grafted
+onto natural scaffolds, so the set is close to the available universe rather than a sample of it. The
+three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
+run-to-run diffusion-sampling variation (~0.05 Spearman); values here are from a single seeded fold.
+Positive KDs come from mixed assays and are not cross-calibrated.
 
 ## Methods scored
 
-Every predictor is a third-party model or tool; this repo only wires them to the split, converts
-their outputs to a common convention, and scores them. Please cite the original work when using any
-result here.
+Every predictor is a third-party model or tool; this repo only wires it to the split, converts its
+outputs to a common convention, and scores it. Full citations are in [References](#references);
+please cite the original work when using any result here.
 
-| column(s) | method | family | source |
+| column(s) | method | family | reference |
 |---|---|---|---|
-| `boltz-2`, `boltz-2-pbind`, `boltz-2-iptm`, `boltz-2-pae-{min,mean}` | Boltz-2 (affinity head + confidence) | co-folding | [jwohlwend/boltz](https://github.com/jwohlwend/boltz) |
-| `nesso-1`, `nesso-1-pbind` | Nesso-1 (affinity head) | co-folding | [recursionpharma/nesso](https://github.com/recursionpharma/nesso) |
-| `protenix-{iptm,ligiptm,gpde,ranking,pae-min,pae-mean}` | Protenix-v2 (confidence + ranking) | co-folding | [bytedance/Protenix](https://github.com/bytedance/Protenix) |
-| `dtsfm-cosine` | dtSFM encoder cosine (drug–target specificity FM; MoLFormer-XL + ESM2 features) | sequence-native FM | see `scripts/run_dtsfm.py` |
-| `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | [RDKit](https://www.rdkit.org) |
-| *(planned, see below)* `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` | SQM (PM6-D3H4X/COSMO2), GNINA CNN, AEV-PLIG | physics / docking / ML rescoring | [Rowan](https://docs.rowansci.com) |
+| `boltz-2`, `boltz-2-pbind`, `boltz-2-iptm`, `boltz-2-pae-{min,mean}` | Boltz-2 (affinity head + confidence) | co-folding | Passaro et al. 2025 |
+| `nesso-1`, `nesso-1-pbind` | Nesso-1 (affinity head) | co-folding | Recursion / Valence Labs |
+| `protenix-{iptm,ligiptm,gpde,ranking,pae-min,pae-mean}` | Protenix v2 (confidence + ranking) | co-folding | ByteDance AML 2025 |
+| `dtsfm-cosine` | dtSFM encoder cosine (drug-target specificity FM) | sequence-native FM | dtSFM-v3, BIIE ETH Zürich |
+| `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | RDKit |
+| `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` *(in progress)* | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
 
-Supporting libraries: structure parsing with [gemmi](https://gemmi.readthedocs.io) and
-[RDKit](https://www.rdkit.org); the leave-one-out combination uses
-[scikit-learn](https://scikit-learn.org) on [NumPy](https://numpy.org); the figures
-(`benchmark.png`, `benchmark_full.png`) are drawn with [Matplotlib](https://matplotlib.org). The
-Rowan rescoring below is driven through the [`rowan-python`](https://github.com/rowansci/rowan-python)
-SDK; GNINA is [gnina/gnina](https://github.com/gnina/gnina) (McNutt et al., *J. Cheminform.* 2021),
-and AEV-PLIG, NESSO and the SQM stack are used through Rowan (see their docs for primary references).
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.
 
 ## Rowan physics / docking rescoring (in progress)
 
-The open question this split raises — *does any method actually track KD on de-novo binders, or does
-that only work on natural complexes?* — is being probed with [Rowan](https://docs.rowansci.com)'s
-binding-affinity workflow, which adds scorer families that are **not** co-folding heads:
+The open question this split raises, *does any method actually track KD on de-novo binders, or does
+that only work on natural complexes?*, is being probed with [Rowan](https://docs.rowansci.com)'s
+binding-affinity workflow, which adds scorer families that are not co-folding heads:
 
-- **SQM** — semi-empirical QM (PM6-D3H4X geometry optimization + COSMO2 single-point in water) on a
-  truncated pocket. Physics-based, so not trained on natural protein–ligand data — the most direct
-  test of whether the natural→de-novo shift is a *learning* artifact.
-- **GNINA** — CNN docking affinity, and **AEV-PLIG** — an ML interaction-graph scorer. Both are
-  trained on natural complexes (PDBbind-style), so a drop here would corroborate the same OOD wall
-  from a different modeling family.
+- **SQM**: semi-empirical QM (PM6-D3H4X geometry optimization, COSMO2 single-point in water) on a
+  truncated pocket. Physics-based, so not trained on natural protein-ligand data, and the most direct
+  test of whether the natural-to-de-novo shift is a *learning* artifact.
+- **GNINA** (CNN docking affinity) and **AEV-PLIG** (an ML interaction-graph scorer). Both are
+  trained on natural complexes (PDBbind-style), so a drop here would corroborate the same
+  out-of-distribution wall from a different modeling family.
 
-All three score a *bound pose*; the poses come from re-folding the 61 systems with Protenix-v2 (the
+All three score a *bound pose*. The poses come from re-folding the 61 systems with Protenix v2 (the
 best-ranked of its 5 samples) and are fed to Rowan through the
 [`rowan-python`](https://github.com/rowansci/rowan-python) SDK in its apo-protein + external-pose
 mode. Wiring lives in `scripts/run_rowan.py`. Results and figures will be added once the runs
@@ -123,9 +116,40 @@ python scripts/run_rowan.py                       # dry run: split poses, print 
 ROWAN_API_KEY=... python scripts/run_rowan.py --submit --methods sqm,gnina,aevplig --max-credits 300
 ```
 
+## References
+
+Models and scorers:
+
+- **Boltz-2**: Passaro, Corso, Wohlwend, et al. *Boltz-2: Towards Accurate and Efficient Binding
+  Affinity Prediction.* bioRxiv (2025). Code: [jwohlwend/boltz](https://github.com/jwohlwend/boltz).
+- **Nesso-1**: Recursion / Valence Labs. *Nesso-1* technical report and model card:
+  [recursionpharma/nesso](https://huggingface.co/recursionpharma/nesso).
+- **Protenix v2**: ByteDance AML AI4Science Team (Chen et al.). *Protenix: Advancing Structure
+  Prediction Through a Comprehensive AlphaFold3 Reproduction.* bioRxiv (2025),
+  [doi:10.1101/2025.01.08.631967](https://doi.org/10.1101/2025.01.08.631967).
+- **dtSFM**: Specificity Foundation Model, BIIE, ETH Zürich. Weights
+  [SFM-BIIE-ETHZ/dtSFM-v3](https://huggingface.co/SFM-BIIE-ETHZ/dtSFM-v3); features from MoLFormer-XL
+  (Ross et al., *Nat. Mach. Intell.* 2022) and ESM2 (Lin et al., *Science* 2023).
+- **GNINA**: McNutt, Francoeur, Aggarwal, et al. *GNINA 1.0: molecular docking with deep learning.*
+  *J. Cheminform.* 13, 43 (2021). Code: [gnina/gnina](https://github.com/gnina/gnina).
+- **AEV-PLIG**: Valsson, Warren, Deane, Magarkar, Morris, Biggin. *Narrowing the gap between machine
+  learning scoring functions and free energy perturbation using augmented data.* (2025),
+  [PMC11807228](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11807228/).
+- **SQM (PM6)**: Stewart. *Optimization of parameters for semiempirical methods V.* *J. Mol. Model.*
+  13, 1173 (2007). Run via Rowan as PM6-D3H4X with COSMO2 solvation.
+
+Software:
+
+- **rowan-python** SDK: Rowan Scientific,
+  [rowansci/rowan-python](https://github.com/rowansci/rowan-python).
+- **RDKit**: Landrum et al. *RDKit: Open-source cheminformatics*, [rdkit.org](https://www.rdkit.org).
+- **gemmi**: Wojdyr. *GEMMI: A library for structural biology.* *J. Open Source Softw.* 7, 4200 (2022).
+- **scikit-learn**: Pedregosa et al. *Scikit-learn: Machine Learning in Python.* *JMLR* 12, 2825 (2011).
+- **NumPy**: Harris et al. *Array programming with NumPy.* *Nature* 585, 357 (2020).
+- **Matplotlib**: Hunter. *Matplotlib: A 2D graphics environment.* *Comput. Sci. Eng.* 9, 90 (2007).
+
 ## Acknowledgements
 
-The physics/docking rescoring is made possible by **compute credits generously provided by
-[Rowan Scientific](https://rowansci.com)** — thank you. It also stands on the open models and tools
-credited above (Boltz-2, Nesso-1, Protenix, dtSFM, RDKit, GNINA, AEV-PLIG, NESSO, and the
-[`rowan-python`](https://github.com/rowansci/rowan-python) SDK); please cite the original work.
+The physics/docking rescoring is made possible by compute credits generously provided by
+[Rowan Scientific](https://rowansci.com); thank you. See [References](#references) for the models,
+scorers, and libraries this benchmark builds on.
