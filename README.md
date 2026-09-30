@@ -164,5 +164,6 @@ Software:
 ## Acknowledgements
 
 The physics/docking rescoring is made possible by compute credits generously provided by
-[Rowan Scientific](https://rowansci.com); thank you. See [References](#references) for the models,
+[Rowan Scientific](https://rowansci.com) ([@RowanSci](https://x.com/RowanSci)), with thanks to
+[Corin Wagen](https://x.com/cwagen) for the credits. See [References](#references) for the models,
 scorers, and libraries this benchmark builds on.
