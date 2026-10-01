@@ -23,10 +23,10 @@ one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affini
 
 ![benchmark](figures/benchmark.png)
 
-Two panels: within-ligand rank-pKd (left, composition controlled) and right-vs-wrong-ligand AUROC
-(right). Bars are 95% bootstrap CIs. The full leaderboard (all metrics) is in
-[`figures/benchmark_full.png`](figures/benchmark_full.png), and `score.py` prints every number
-(including the pooled numbers, kept only for transparency).
+Every metric, two panels: within-ligand rank-pKd (left, composition controlled; the dashed line is no
+correlation, rho = 0) and right-vs-wrong-ligand AUROC (right; the dashed line is chance, 0.5). Bars
+are 95% bootstrap CIs. `score.py` prints every number, including the pooled Spearman kept only for
+transparency.
 
 - **Within ligand, co-folder interface confidence leads.** Holding the molecule fixed (median over the
   5 ligands with >= 3 protein binders), the interface-confidence metrics come to the front: Protenix

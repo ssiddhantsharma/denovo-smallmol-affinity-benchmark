@@ -1,10 +1,8 @@
-"""Benchmark figures. Two per run:
-  benchmark.png       select metrics (README face): affinity heads vs a proxy vs baselines + combination
-  benchmark_full.png  every metric score.py computes
+"""Benchmark figure: figures/benchmark.png, every metric, two panels.
 
-Left panel ranks measured pKd (Spearman among the binders; dotted = cLogP). Right panel tells the
-correct ligand from the wrong one (AUROC over all pairs; dotted = chance). Bars are 95% bootstrap CIs.
-The leave-one-out combination is its own bar. Stats: score.py.
+Left panel ranks pKd within-ligand (median Spearman; dashed line = no correlation). Right panel tells
+the correct ligand from the wrong one (AUROC over all pairs; dashed line = chance). Bars are 95%
+bootstrap CIs. The leave-one-out combination is its own bar. Stats: score.py.
 """
 
 from pathlib import Path
@@ -38,7 +36,6 @@ REF, WHISK = "#8f8880", "#9b938a"
 LABEL = {"aff": "dedicated affinity head", "prox": "structural proxy",
          "base": "trivial baseline", "combo": "combination (LOO)", "seq": "sequence-native FM",
          "phys": "physics (SQM)", "dock": "docking / ML rescore", "iface": "interface geometry"}
-SELECT = ["boltz-2", "nesso-1", "boltz-2-iptm", "protenix-iptm", "rowan-sqm", "clogp", "molecular-weight"]
 PRETTY = {"boltz-2": "Boltz-2", "nesso-1": "Nesso-1", "boltz-2-iptm": "Boltz-2 ipTM",
           "protenix-iptm": "Protenix ipTM", "clogp": "cLogP", "molecular-weight": "MW",
           "dtsfm-cosine": "dtSFM",
@@ -77,40 +74,41 @@ def stats(rows, methods):
 def bars(ax, data, ref, ref_label, xlabel, xlim):
     data.sort(key=lambda t: t[1])
     n = len(data)
+    ax.grid(axis="x", color="#ece8e2", lw=0.6, zorder=0)
     for y, (_lab, v, lo, hi, cat) in enumerate(data):
-        ax.barh(y, v, color=COL[cat], height=0.62, zorder=3)
-        ax.plot([lo, hi], [y, y], color=WHISK, lw=0.9, alpha=0.9, zorder=2)
-    ax.axvline(ref, ls=":", lw=1.3, color=REF, zorder=1)
-    ax.text(ref, n - 0.35, f" {ref_label}", color=REF, fontsize=8.5, ha="left", va="center")
-    ax.set_yticks(range(n)); ax.set_yticklabels([d[0] for d in data], fontsize=9)
-    ax.set_ylim(-0.7, n - 0.3)
-    ax.set_xlabel(xlabel, fontsize=9.5); ax.set_xlim(*xlim)
+        ax.barh(y, v, color=COL[cat], height=0.64, zorder=3)
+        ax.plot([lo, hi], [y, y], color=WHISK, lw=0.9, alpha=0.9, zorder=4)
+    ax.axvline(ref, ls="--", lw=1.1, color=REF, zorder=2)
+    ax.annotate(ref_label, xy=(ref, n - 0.5), xytext=(0, 7), textcoords="offset points",
+                ha="center", va="bottom", fontsize=8.5, color=REF, fontstyle="italic")
+    ax.set_yticks(range(n)); ax.set_yticklabels([d[0] for d in data], fontsize=8.5)
+    ax.set_ylim(-0.7, n + 0.3)
+    ax.set_xlabel(xlabel, fontsize=10); ax.set_xlim(*xlim)
     ax.tick_params(axis="x", labelsize=9)
-    for s in ("top", "right"):
+    for s in ("top", "right", "left"):
         ax.spines[s].set_visible(False)
 
 
 def render(wlig, spec, out, height):
-    fig, (a, b) = plt.subplots(1, 2, figsize=(11, height))
-    bars(a, wlig, 0.0, "no corr.", "within-ligand Spearman rho vs pKd", (-0.8, 1.0))
-    bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
-    a.set_title("rank KD within a ligand\n(composition controlled)", fontsize=9.5)
-    b.set_title("tell right ligand from wrong", fontsize=9.5)
+    fig, (a, b) = plt.subplots(1, 2, figsize=(12, height))
+    bars(a, wlig, 0.0, "no correlation (rho = 0)", "within-ligand Spearman rho vs pKd", (-0.85, 1.0))
+    bars(b, spec, 0.5, "chance (AUROC = 0.5)", "AUROC: correct vs wrong ligand", (0.0, 1.0))
+    a.set_title("rank KD within a ligand  (composition controlled)", fontsize=10.5, pad=16)
+    b.set_title("tell the right ligand from the wrong one", fontsize=10.5, pad=16)
     present = {d[4] for d in spec}
     cats = [c for c in ("aff", "prox", "phys", "dock", "iface", "seq", "base", "combo") if c in present]
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
     fig.legend(handles, [LABEL[c] for c in cats], fontsize=8.5, loc="lower center",
                ncol=len(cats), frameon=False, bbox_to_anchor=(0.5, 0.0))
-    fig.suptitle("Affinity predictors on de-novo protein-small-molecule binders", fontsize=12)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
+    fig.suptitle("Affinity predictors on de-novo protein-small-molecule binders", fontsize=13, y=0.99)
+    fig.tight_layout(rect=(0, 0.04, 1, 0.96))
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print("saved", out)
 
 
 def main():
     rows, methods = load()
-    render(*stats(rows, SELECT), ROOT / "figures/benchmark.png", 5.4)
-    render(*stats(rows, methods), ROOT / "figures/benchmark_full.png", 8.6)
+    render(*stats(rows, methods), ROOT / "figures/benchmark.png", 8.8)
 
 
 if __name__ == "__main__":
