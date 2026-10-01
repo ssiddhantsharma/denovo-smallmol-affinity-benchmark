@@ -124,18 +124,6 @@ predictions/<method>_predictions.csv                 method, id, predicted_affin
 
 Every `predictions/*.csv` joins to the reference by `id` and is scored automatically.
 
-## Tests
-
-```
-pip install numpy scikit-learn rdkit pytest
-pytest -q
-```
-
-`tests/` covers the scoring statistics (Spearman, Pearson, AUROC, RMSE), dataset integrity
-(60 systems = 49 binders + 11 negatives, every prediction joins to the ground truth) and validation
-(every SMILES parses, every sequence is valid, no two systems share the same sequence and SMILES, pKd
-in range), and that `score.py` runs end to end. CI (ruff lint + pytest) runs on every push.
-
 ## Reproduce
 
 ```
