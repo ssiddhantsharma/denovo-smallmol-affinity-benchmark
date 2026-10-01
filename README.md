@@ -37,6 +37,10 @@ per model plus the baselines; the full leaderboard (all metrics) is in
   its featurization validates on in-distribution natural pairs (true-vs-shuffled AUROC 0.863; see
   `scripts/run_dtsfm.py`, which gates on that positive control before scoring). So neither a
   structural co-folder nor a sequence-native FM escapes the natural-to-de-novo distribution shift.
+- **A physics scorer matches the best co-folder.** Rowan's SQM (semi-empirical QM, with no training
+  on binding data) ranks pKd at +0.40, level with Boltz-2 ipTM and above cLogP; the learned rescorers
+  GNINA (+0.35) and AEV-PLIG (+0.32) only match cLogP. Details in
+  [Rowan physics / docking rescoring](#rowan-physics--docking-rescoring).
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
@@ -68,29 +72,37 @@ please cite the original work when using any result here.
 | `protenix-{iptm,ligiptm,gpde,ranking,pae-min,pae-mean}` | Protenix v2 (confidence + ranking) | co-folding | ByteDance AML 2025 |
 | `dtsfm-cosine` | dtSFM encoder cosine (drug-target specificity FM) | sequence-native FM | dtSFM-v3, BIIE ETH Zürich |
 | `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | RDKit |
-| `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` *(in progress)* | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
+| `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
 
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.
 
-## Rowan physics / docking rescoring (in progress)
+## Rowan physics / docking rescoring
 
 The open question this split raises, *does any method actually track KD on de-novo binders, or does
-that only work on natural complexes?*, is being probed with [Rowan](https://docs.rowansci.com)'s
-binding-affinity workflow, which adds scorer families that are not co-folding heads:
-
-- **SQM**: semi-empirical QM (PM6-D3H4X geometry optimization, COSMO2 single-point in water) on a
-  truncated pocket. Physics-based, so not trained on natural protein-ligand data, and the most direct
-  test of whether the natural-to-de-novo shift is a *learning* artifact.
-- **GNINA** (CNN docking affinity) and **AEV-PLIG** (an ML interaction-graph scorer). Both are
-  trained on natural complexes (PDBbind-style), so a drop here would corroborate the same
-  out-of-distribution wall from a different modeling family.
-
-All three score a *bound pose*. The poses come from re-folding the 61 systems with Protenix v2 (the
-best-ranked of its 5 samples) and are fed to Rowan through the
+that only work on natural complexes?*, is probed with [Rowan](https://docs.rowansci.com)'s
+binding-affinity workflow over scorer families that are not co-folding heads. Each scores a bound
+pose (the best-ranked of Protenix v2's 5 samples per system), fed to Rowan through the
 [`rowan-python`](https://github.com/rowansci/rowan-python) SDK in its apo-protein + external-pose
-mode. Wiring lives in `scripts/run_rowan.py`. Results and figures will be added once the runs
-complete.
+mode; SQM additionally runs a protonation (protein-preparation) step first. Wiring is in
+`scripts/run_rowan.py`.
+
+- **Physics (SQM) reaches the top tier with no training on binding data.** PM6-D3H4X/COSMO2
+  single-point scoring tracks pKd at Spearman +0.40 [+0.10, +0.64], level with the best co-folding
+  metric (Boltz-2 ipTM +0.42) and above cLogP (+0.35). A physics method that never saw a binding
+  measurement, ranking de-novo affinity as well as the best learned co-folder, is the clearest sign
+  yet that the natural-to-de-novo wall is a *learning* artifact rather than a hard limit.
+- **The learned rescorers do not escape the wall.** GNINA (+0.35) and AEV-PLIG (+0.32), both trained
+  on natural complexes (PDBbind-style), land right at cLogP, the same place the co-folding affinity
+  heads sit.
+- **None of them help with specificity.** On telling the correct ligand from the wrong one, SQM
+  (0.57), GNINA (0.58), and AEV-PLIG (0.47) are all near chance, far below co-folder ipTM (0.91). The
+  physics signal is for ranking affinity among binders, not for rejecting decoys.
+
+Caveats: SQM's CI is wide at this n, and its truncated-pocket energies are noisy (cut salt bridges
+leave some pockets electrostatically incomplete). Neither SQM nor AEV-PLIG can score the four
+silicon-rhodamine dye systems (COSMO2 has no Si parameters; AEV-PLIG rejects the Si poses), so those
+cells are blank; GNINA scores all 61.
 
 ## Layout
 

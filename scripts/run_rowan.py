@@ -15,7 +15,7 @@ source is Protenix-v2 (the benchmark's strongest co-folder; best-ranked of its 5
   python scripts/run_rowan.py
 
   # 3. submit (needs ROWAN_API_KEY): one workflow per (system, method)
-  ROWAN_API_KEY=rowan-sk-... python scripts/run_rowan.py --submit --methods sqm,gnina,aevplig \
+  ROWAN_API_KEY=<your-rowan-key> python scripts/run_rowan.py --submit --methods sqm,gnina,aevplig \
       --max-credits 200
 
 Writes predictions/rowan-{sqm,gnina,aevplig}_predictions.csv. Orientation: higher = tighter.
@@ -136,12 +136,24 @@ def build_poses(mode):
 
 
 def write_pred(method_col, values):
-    with open(PRED / f"{method_col}_predictions.csv", "w", newline="") as f:
+    """Write method,id,predicted_affinity for all systems. Systems scored this run (in `values`)
+    get the new value; any others keep whatever is already on disk, so a targeted --only/--limit
+    retry does not blank out the rest of the column."""
+    path = PRED / f"{method_col}_predictions.csv"
+    existing = {}
+    if path.exists():
+        existing = {r["id"]: r["predicted_affinity"]
+                    for r in csv.DictReader(path.read_text().splitlines())}
+    with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["method", "id", "predicted_affinity"])
         for r in refs():
-            v = values.get(r["id"])
-            w.writerow([method_col, r["id"], "" if v is None else v])
+            if r["id"] in values:
+                v = values[r["id"]]
+                cell = "" if v is None else v
+            else:
+                cell = existing.get(r["id"], "")
+            w.writerow([method_col, r["id"], cell])
     print(f"WROTE {method_col}_predictions.csv", flush=True)
 
 
@@ -156,46 +168,68 @@ def submit(methods, ok, max_credits, draft=False):
         print(f"  (folder grouping unavailable: {type(e).__name__}; submitting to account root)")
         folder = None
 
-    def prepared_protein(protein_uuid, sid):
-        # SQM (MOZYME) needs a protonated, closed-shell protein; the co-folded PDB has no H, so
-        # geometry-based charge inference yields odd-electron pockets. Protonate at pH 7.4 first.
-        prep = rowan.submit_protein_preparation_workflow(
-            protein=protein_uuid, protonation_method="openmm", pH=7.4,
-            name=f"prep {sid}", folder=folder, max_credits=max_credits)
-        return prep.result().prepared_protein_uuid
-
+    # Workflows run concurrently server-side, so submit them all up front and collect afterwards
+    # rather than blocking on each result in turn (183 affinity + 61 prep workflows would be hours
+    # sequentially, ~an hour batched).
     for key in methods:
         col, _, sqm = METHODS[key]
-        vals = {}
-        for row in ok:
-            sid, pp, ls = row
+
+        # Stage 1 (SQM only): submit every protein-prep so they run in parallel. SQM (MOZYME) needs
+        # a protonated closed-shell protein; the co-folded PDB has no H, so geometry-based charge
+        # inference yields odd-electron pockets. Protonate at pH 7.4 first.
+        preps = {}
+        if sqm and not draft:
+            for sid, pp, _ in ok:
+                try:
+                    protein = rowan.upload_protein(sid, str(pp))
+                    preps[sid] = rowan.submit_protein_preparation_workflow(
+                        protein=protein.uuid, protonation_method="openmm", pH=7.4,
+                        name=f"prep {sid}", folder=folder, max_credits=max_credits)
+                except Exception as e:  # noqa: BLE001 - surface, keep the batch going
+                    preps[sid] = e
+
+        # Stage 2: submit every binding-affinity workflow (all run in parallel).
+        jobs = []  # (sid, wf | None, err | None)
+        for sid, pp, ls in ok:
             try:
-                protein = rowan.upload_protein(sid, str(pp))
-                target = protein.uuid
-                if sqm and not draft:              # SQM only; ML scorers use the raw pose
-                    target = prepared_protein(protein.uuid, sid)
+                if sqm and not draft:
+                    prep = preps.get(sid)
+                    if isinstance(prep, Exception):
+                        raise prep
+                    target = prep.result().prepared_protein_uuid
+                else:
+                    target = rowan.upload_protein(sid, str(pp)).uuid
                 ligand = next(iter(rowan.load_named_ligands(str(ls)).values()))
                 wf = rowan.submit_binding_affinity_workflow(
-                    protein=target,
-                    ligand_structures=[ligand],
+                    protein=target, ligand_structures=[ligand],
                     binding_affinity_settings=settings[key](),
-                    name=f"benchmark {col} {sid}",
-                    folder=folder,
-                    max_credits=max_credits,
-                    is_draft=draft,
-                )
-                if draft:
-                    print(f"  DRAFT {col} {sid}: workflow {wf.uuid} created (not executed)", flush=True)
-                    continue
+                    name=f"benchmark {col} {sid}", folder=folder,
+                    max_credits=max_credits, is_draft=draft)
+                jobs.append((sid, wf, None))
+            except Exception as e:  # noqa: BLE001 - surface, keep the batch going
+                jobs.append((sid, None, f"{type(e).__name__}: {str(e)[:140]}"))
+
+        if draft:
+            for sid, wf, err in jobs:
+                print(f"  DRAFT {col} {sid}: {wf.uuid if wf else 'FAILED ' + err}", flush=True)
+            continue
+
+        # Stage 3: collect results (submitted together, so this drains as they finish).
+        vals = {}
+        for sid, wf, err in jobs:
+            if wf is None:
+                vals[sid] = None
+                print(f"  {col} {sid}: FAILED ({err})", flush=True)
+                continue
+            try:
                 score = wf.result().scores[0]
                 raw = None if score is None else score.binding_affinity
                 vals[sid] = None if raw is None else (-raw if sqm else raw)
                 print(f"  {col} {sid}: {raw}", flush=True)
-            except Exception as e:  # noqa: BLE001 - surface per-system failure, keep the batch going
+            except Exception as e:  # noqa: BLE001 - surface, keep the batch going
                 vals[sid] = None
                 print(f"  {col} {sid}: FAILED ({type(e).__name__}: {str(e)[:140]})", flush=True)
-        if not draft:
-            write_pred(col, vals)
+        write_pred(col, vals)
 
 
 def main():
@@ -206,6 +240,7 @@ def main():
     ap.add_argument("--submit", action="store_true", help="actually call the Rowan API (needs ROWAN_API_KEY)")
     ap.add_argument("--max-credits", type=int, default=None, help="hard credit cap per workflow")
     ap.add_argument("--limit", type=int, default=None, help="use only the first N systems (smoke test)")
+    ap.add_argument("--only", default=None, help="comma-separated system ids to run (targeted retry)")
     ap.add_argument("--draft", action="store_true",
                     help="with --submit: create is_draft workflows (validate the full path, no execution, no credits)")
     args = ap.parse_args()
@@ -215,6 +250,10 @@ def main():
     print(f"\n{args.poses} poses: {len(ok)} ready, {len(bad)} failed")
     for b in bad:
         print(f"  FAILED {b[0]}: {b[1]}")
+    if args.only:
+        want = {x.strip() for x in args.only.split(",") if x.strip()}
+        ok = [r for r in ok if r[0] in want]
+        print(f"--only: {len(ok)} system(s) {[r[0] for r in ok]}")
     if args.limit:
         ok = ok[:args.limit]
         print(f"--limit {args.limit}: using first {len(ok)} system(s) only")
