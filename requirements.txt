@@ -2,3 +2,4 @@ rdkit
 numpy
 scikit-learn
 matplotlib
+gemmi

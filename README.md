@@ -42,7 +42,9 @@ AUROC (right). Bars are 95% bootstrap CIs. The full leaderboard (all metrics) is
   is suggestive, not decisive.
 - **Specificity still belongs to the co-folders.** On telling the correct ligand from the wrong one,
   Boltz-2 / Protenix ipTM reach 0.85 to 0.91; cLogP, dtSFM, and the physics/ML rescorers are all near
-  chance.
+  chance. A pure-geometry pose baseline, ligand burial (`interface-ligburial`, fraction of the ligand
+  within 4.5 A of the protein), reaches 0.71, above cLogP, but it carries no affinity-ranking signal
+  (within-ligand rho ~0): the real ligand is more buried, yet burial does not order KD.
 - **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
   dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at chance on de
   novo (AUROC 0.53, within-ligand +0.10), yet its featurization validates on in-distribution natural
@@ -84,6 +86,7 @@ please cite the original work when using any result here.
 | `dtsfm-cosine` | dtSFM encoder cosine (drug-target specificity FM) | sequence-native FM | dtSFM-v3, BIIE ETH Zürich |
 | `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | RDKit |
 | `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
+| `interface-ncontacts`, `interface-ligburial` | protein-ligand contacts and ligand burial from the pose | interface geometry | `scripts/run_interface.py` (gemmi) |
 
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.

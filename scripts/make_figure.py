@@ -30,18 +30,20 @@ CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbin
        "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
        "clogp": "base", "molecular-weight": "base", "combination": "combo",
        "dtsfm-cosine": "seq",
-       "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock"}
+       "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock",
+       "interface-ncontacts": "iface", "interface-ligburial": "iface"}
 COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8", "combo": "#8a5a72", "seq": "#7B4FA0",
-       "phys": "#2e8b6b", "dock": "#a0522d"}
+       "phys": "#2e8b6b", "dock": "#a0522d", "iface": "#5a7d8c"}
 REF, WHISK = "#8f8880", "#9b938a"
 LABEL = {"aff": "dedicated affinity head", "prox": "structural proxy",
          "base": "trivial baseline", "combo": "combination (LOO)", "seq": "sequence-native FM",
-         "phys": "physics (SQM)", "dock": "docking / ML rescore"}
+         "phys": "physics (SQM)", "dock": "docking / ML rescore", "iface": "interface geometry"}
 SELECT = ["boltz-2", "nesso-1", "boltz-2-iptm", "protenix-iptm", "rowan-sqm", "clogp", "molecular-weight"]
 PRETTY = {"boltz-2": "Boltz-2", "nesso-1": "Nesso-1", "boltz-2-iptm": "Boltz-2 ipTM",
           "protenix-iptm": "Protenix ipTM", "clogp": "cLogP", "molecular-weight": "MW",
           "dtsfm-cosine": "dtSFM",
-          "rowan-sqm": "SQM", "rowan-gnina": "GNINA", "rowan-aevplig": "AEV-PLIG"}
+          "rowan-sqm": "SQM", "rowan-gnina": "GNINA", "rowan-aevplig": "AEV-PLIG",
+          "interface-ncontacts": "iface contacts", "interface-ligburial": "iface burial"}
 
 
 def _wlig_ci(per, n):
@@ -98,7 +100,7 @@ def render(reg, wlig, spec, out, height):
     b.set_title("within ligand\n(cLogP constant, drops out)", fontsize=9.5)
     c.set_title("right vs wrong ligand", fontsize=9.5)
     present = {d[4] for d in reg}
-    cats = [c for c in ("aff", "prox", "phys", "dock", "seq", "base", "combo") if c in present]
+    cats = [c for c in ("aff", "prox", "phys", "dock", "iface", "seq", "base", "combo") if c in present]
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
     fig.legend(handles, [LABEL[c] for c in cats], fontsize=8.5, loc="lower center",
                ncol=len(cats), frameon=False, bbox_to_anchor=(0.5, 0.0))
