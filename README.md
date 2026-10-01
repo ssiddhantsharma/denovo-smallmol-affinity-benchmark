@@ -88,10 +88,11 @@ mode; SQM additionally runs a protonation (protein-preparation) step first. Wiri
 `scripts/run_rowan.py`.
 
 - **Physics (SQM) reaches the top tier with no training on binding data.** PM6-D3H4X/COSMO2
-  single-point scoring tracks pKd at Spearman +0.40 [+0.10, +0.64], level with the best co-folding
-  metric (Boltz-2 ipTM +0.42) and above cLogP (+0.35). A physics method that never saw a binding
-  measurement, ranking de-novo affinity as well as the best learned co-folder, is the clearest sign
-  yet that the natural-to-de-novo wall is a *learning* artifact rather than a hard limit.
+  single-point scoring tracks pKd at Spearman +0.40 [+0.10, +0.64] over the 46 binders it can score,
+  level with the best co-folding metric (Boltz-2 ipTM +0.42) and above cLogP (+0.35). A physics method
+  that never saw a binding measurement, ranking de-novo affinity as well as the best learned
+  co-folder, is the clearest sign yet that the natural-to-de-novo wall is a *learning* artifact rather
+  than a hard limit.
 - **The learned rescorers do not escape the wall.** GNINA (+0.35) and AEV-PLIG (+0.32), both trained
   on natural complexes (PDBbind-style), land right at cLogP, the same place the co-folding affinity
   heads sit.
