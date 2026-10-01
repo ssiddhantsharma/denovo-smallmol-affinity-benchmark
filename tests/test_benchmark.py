@@ -48,15 +48,38 @@ def test_rmse():
 
 def test_dataset_shape():
     rows, methods = score.load()
-    assert len(rows) == 61
+    assert len(rows) == 60
     binders = [r for r in rows if r["is_binder"] == 1]
     negs = [r for r in rows if r["is_binder"] == 0]
-    assert len(binders) == 50
+    assert len(binders) == 49
     assert len(negs) == 11
     assert all(r["pKd"] is not None for r in binders), "every binder must carry a measured pKd"
+    assert all(r["pKd"] is None for r in negs), "negatives must not carry a pKd"
     assert len(methods) >= 16
     for m in ("boltz-2", "clogp", "protenix-iptm", "dtsfm-cosine"):
         assert m in methods
+
+
+def test_dataset_validated():
+    """Integrity checks that must hold for every system (would have caught the JF646/JFX646 dup)."""
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    sysref = list(csv.DictReader(
+        (ROOT / "reference/system_reference.csv").read_text().splitlines()))
+    aa = set("ACDEFGHIKLMNPQRSTVWY")
+    seen_pairs = set()
+    for r in sysref:
+        seq, smi = r["sequence"].strip().upper(), r["smiles"].strip()
+        assert seq and not (set(seq) - aa), f"{r['id']}: invalid sequence"
+        assert Chem.MolFromSmiles(smi) is not None, f"{r['id']}: unparseable SMILES"
+        assert all(r[c].strip() for c in ("protein", "ligand_name", "source")), f"{r['id']}: missing field"
+        pair = (seq, smi)
+        assert pair not in seen_pairs, f"{r['id']}: duplicate (sequence, smiles) pair"
+        seen_pairs.add(pair)
+    pkds = [float(r["experimental_pKD"]) for r in csv.DictReader(
+        (ROOT / "reference/experimental_reference_ground_truth.csv").read_text().splitlines())
+        if r["experimental_pKD"].strip()]
+    assert all(2.0 <= p <= 13.0 for p in pkds), "pKd outside a sane range"
 
 
 def test_within_ligand_drops_constant_ligand_properties():

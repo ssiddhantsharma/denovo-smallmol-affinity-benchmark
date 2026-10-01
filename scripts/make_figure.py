@@ -19,7 +19,6 @@ from score import (
     bootstrap_ci,
     combine_loo,
     load,
-    spearman,
     within_ligand_rho,
 )
 
@@ -58,23 +57,21 @@ def _wlig_ci(per, n):
 
 
 def stats(rows, methods):
-    binders = [r for r in rows if r["is_binder"] == 1 and r["pKd"] is not None]
-    reg, wlig, spec = [], [], []
+    # Pooled Spearman is omitted on purpose: across the set's many ligands it is confounded by
+    # ligand composition (cLogP "wins" as an artifact), so only the composition-controlled axes are
+    # shown. score.py still prints the pooled numbers for transparency.
+    wlig, spec = [], []
     for m in methods:
         sgn = -1 if m in LOWER_BETTER else 1
-        bx, by = zip(*[(sgn * r[m], r["pKd"]) for r in binders if r.get(m) is not None], strict=True)
-        reg.append((PRETTY.get(m, m), spearman(list(bx), list(by)),
-                    *bootstrap_ci(list(bx), list(by), spearman), CAT[m]))
         med, per, ng = within_ligand_rho(rows, m)
         if med is not None:
             wlig.append((PRETTY.get(m, m), *_wlig_ci(per, ng), CAT[m]))
         sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in rows if r.get(m) is not None], strict=True)
         spec.append((PRETTY.get(m, m), auroc(list(sx), list(sl)),
                      *bootstrap_ci(list(sx), list(sl), auroc), CAT[m]))
-    (rp, ry), (sp, sy) = combine_loo(rows)
-    reg.append(("combination", spearman(rp, ry), *bootstrap_ci(rp, ry, spearman), "combo"))
+    (_, _), (sp, sy) = combine_loo(rows)
     spec.append(("combination", auroc(sp, sy), *bootstrap_ci(sp, sy, auroc), "combo"))
-    return reg, wlig, spec
+    return wlig, spec
 
 
 def bars(ax, data, ref, ref_label, xlabel, xlim):
@@ -93,16 +90,13 @@ def bars(ax, data, ref, ref_label, xlabel, xlim):
         ax.spines[s].set_visible(False)
 
 
-def render(reg, wlig, spec, out, height):
-    fig, (a, b, c) = plt.subplots(1, 3, figsize=(15, height))
-    clogp_rho = next(v for lab, v, *_ in reg if lab == "cLogP")
-    bars(a, reg, clogp_rho, "cLogP", "pooled Spearman rho vs pKd", (-0.2, 0.85))
-    bars(b, wlig, 0.0, "no corr.", "within-ligand Spearman rho vs pKd", (-0.8, 1.0))
-    bars(c, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
-    a.set_title("pooled across ligands\n(cLogP competes)", fontsize=9.5)
-    b.set_title("within ligand\n(cLogP constant, drops out)", fontsize=9.5)
-    c.set_title("right vs wrong ligand", fontsize=9.5)
-    present = {d[4] for d in reg}
+def render(wlig, spec, out, height):
+    fig, (a, b) = plt.subplots(1, 2, figsize=(11, height))
+    bars(a, wlig, 0.0, "no corr.", "within-ligand Spearman rho vs pKd", (-0.8, 1.0))
+    bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
+    a.set_title("rank KD within a ligand\n(composition controlled)", fontsize=9.5)
+    b.set_title("tell right ligand from wrong", fontsize=9.5)
+    present = {d[4] for d in spec}
     cats = [c for c in ("aff", "prox", "phys", "dock", "iface", "seq", "base", "combo") if c in present]
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
     fig.legend(handles, [LABEL[c] for c in cats], fontsize=8.5, loc="lower center",
