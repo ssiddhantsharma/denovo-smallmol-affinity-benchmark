@@ -28,6 +28,7 @@ CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbin
        "boltz-2-iptm": "prox", "boltz-2-pae-min": "prox", "boltz-2-pae-mean": "prox",
        "protenix-iptm": "prox", "protenix-ligiptm": "prox", "protenix-gpde": "prox",
        "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
+       "protenix-ptm": "prox", "protenix-plddt-binder": "prox", "protenix-plddt-ligand": "prox",
        "clogp": "base", "molecular-weight": "base", "combination": "combo",
        "dtsfm-cosine": "seq",
        "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock",
@@ -43,7 +44,9 @@ PRETTY = {"boltz-2": "Boltz-2", "nesso-1": "Nesso-1", "boltz-2-iptm": "Boltz-2 i
           "protenix-iptm": "Protenix ipTM", "clogp": "cLogP", "molecular-weight": "MW",
           "dtsfm-cosine": "dtSFM",
           "rowan-sqm": "SQM", "rowan-gnina": "GNINA", "rowan-aevplig": "AEV-PLIG",
-          "interface-ncontacts": "iface contacts", "interface-ligburial": "iface burial"}
+          "interface-ncontacts": "iface contacts", "interface-ligburial": "iface burial",
+          "protenix-ptm": "Protenix pTM", "protenix-plddt-binder": "Protenix pLDDT bind",
+          "protenix-plddt-ligand": "Protenix pLDDT lig"}
 
 
 def _wlig_ci(per, n):

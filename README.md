@@ -34,17 +34,18 @@ AUROC (right). Bars are 95% bootstrap CIs. The full leaderboard (all metrics) is
   composition, not binding. This is a confound, not a result.
 - **Within ligand, the confound lifts and interface confidence leads.** Controlling for the molecule
   (median over the 5 ligands with >= 3 protein binders), cLogP and MW are constant and drop out
-  entirely, and the interface-confidence metrics come to the front: Protenix ipTM +0.65, Protenix
-  lig-ipTM +0.65, Boltz-2 ipTM +0.60, interface-PAE in the same band. The physics and ML rescorers
-  are middling (SQM +0.33, AEV-PLIG +0.35, GNINA +0.30) and the affinity heads trail (Boltz-2 +0.30,
-  Nesso-1 -0.05). This is the *same* metric family (iPTM / ipSAE / interface-PAE) that ranks KD on
-  de-novo protein sets. CIs are very wide (only 5 ligand groups, 3 to 9 binders each), so the ordering
-  is suggestive, not decisive.
+  entirely, and the co-folders' interface-confidence metrics come to the front: Protenix ipTM / lig-ipTM
+  +0.65, Boltz-2 ipTM +0.60, Protenix pLDDT-ligand +0.43, interface-PAE in the same band. The physics
+  and ML rescorers are middling (SQM +0.33, AEV-PLIG +0.35, GNINA +0.30) and the affinity heads trail
+  (Boltz-2 +0.30, Nesso-1 -0.05). This is the same confidence family (iPTM, pTM, pLDDT, interface-PAE)
+  that ranks KD on de-novo *protein* sets. CIs are very wide (only 5 ligand groups, 3 to 9 binders
+  each), so the ordering is suggestive, not decisive.
 - **Specificity still belongs to the co-folders.** On telling the correct ligand from the wrong one,
-  Boltz-2 / Protenix ipTM reach 0.85 to 0.91; cLogP, dtSFM, and the physics/ML rescorers are all near
-  chance. A pure-geometry pose baseline, ligand burial (`interface-ligburial`, fraction of the ligand
-  within 4.5 A of the protein), reaches 0.71, above cLogP, but it carries no affinity-ranking signal
-  (within-ligand rho ~0): the real ligand is more buried, yet burial does not order KD.
+  the interface-confidence metrics lead: Boltz-2 / Protenix ipTM 0.85 to 0.91, Protenix pLDDT-ligand
+  0.86, pTM 0.79. cLogP, dtSFM, and the physics/ML rescorers are near chance. A pure-geometry pose
+  baseline, ligand burial (`interface-ligburial`, fraction of the ligand within 4.5 A of the protein),
+  reaches 0.71, above cLogP, but carries no affinity-ranking signal (within-ligand rho ~0): the real
+  ligand is more buried, yet burial does not order KD.
 - **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
   dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at chance on de
   novo (AUROC 0.53, within-ligand +0.10), yet its featurization validates on in-distribution natural
@@ -82,11 +83,16 @@ please cite the original work when using any result here.
 |---|---|---|---|
 | `boltz-2`, `boltz-2-pbind`, `boltz-2-iptm`, `boltz-2-pae-{min,mean}` | Boltz-2 (affinity head + confidence) | co-folding | Passaro et al. 2025 |
 | `nesso-1`, `nesso-1-pbind` | Nesso-1 (affinity head) | co-folding | Recursion / Valence Labs |
-| `protenix-{iptm,ligiptm,gpde,ranking,pae-min,pae-mean}` | Protenix v2 (confidence + ranking) | co-folding | ByteDance AML 2025 |
+| `protenix-{iptm,ligiptm,ptm,plddt-binder,plddt-ligand,gpde,ranking,pae-min,pae-mean}` | Protenix v2 (confidence + ranking) | co-folding | ByteDance AML 2025 |
 | `dtsfm-cosine` | dtSFM encoder cosine (drug-target specificity FM) | sequence-native FM | dtSFM-v3, BIIE ETH Zürich |
 | `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | RDKit |
 | `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
 | `interface-ncontacts`, `interface-ligburial` | protein-ligand contacts and ligand burial from the pose | interface geometry | `scripts/run_interface.py` (gemmi) |
+
+The confidence metrics cover the de-novo metric set used on protein binders (iPTM, pTM, pLDDT,
+interface-PAE, contacts). ipSAE and LIS, the strongest there, are protein-protein scores built from
+the full residue-residue PAE matrix; that matrix was not saved here, and for a few-atom ligand their
+natural analog is lig-ipTM plus interface-PAE, which are included.
 
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.
