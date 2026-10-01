@@ -13,7 +13,15 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from score import LOWER_BETTER, auroc, bootstrap_ci, combine_loo, load, spearman
+from score import (
+    LOWER_BETTER,
+    auroc,
+    bootstrap_ci,
+    combine_loo,
+    load,
+    spearman,
+    within_ligand_rho,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbind": "aff",
@@ -36,21 +44,32 @@ PRETTY = {"boltz-2": "Boltz-2", "nesso-1": "Nesso-1", "boltz-2-iptm": "Boltz-2 i
           "rowan-sqm": "SQM", "rowan-gnina": "GNINA", "rowan-aevplig": "AEV-PLIG"}
 
 
+def _wlig_ci(per, n):
+    import random
+    import statistics
+    rng = random.Random(0)
+    boots = sorted(statistics.median([per[rng.randrange(n)] for _ in range(n)]) for _ in range(2000))
+    return statistics.median(per), boots[int(0.025 * len(boots))], boots[int(0.975 * len(boots))]
+
+
 def stats(rows, methods):
     binders = [r for r in rows if r["is_binder"] == 1 and r["pKd"] is not None]
-    reg, spec = [], []
+    reg, wlig, spec = [], [], []
     for m in methods:
         sgn = -1 if m in LOWER_BETTER else 1
         bx, by = zip(*[(sgn * r[m], r["pKd"]) for r in binders if r.get(m) is not None], strict=True)
         reg.append((PRETTY.get(m, m), spearman(list(bx), list(by)),
                     *bootstrap_ci(list(bx), list(by), spearman), CAT[m]))
+        med, per, ng = within_ligand_rho(rows, m)
+        if med is not None:
+            wlig.append((PRETTY.get(m, m), *_wlig_ci(per, ng), CAT[m]))
         sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in rows if r.get(m) is not None], strict=True)
         spec.append((PRETTY.get(m, m), auroc(list(sx), list(sl)),
                      *bootstrap_ci(list(sx), list(sl), auroc), CAT[m]))
     (rp, ry), (sp, sy) = combine_loo(rows)
     reg.append(("combination", spearman(rp, ry), *bootstrap_ci(rp, ry, spearman), "combo"))
     spec.append(("combination", auroc(sp, sy), *bootstrap_ci(sp, sy, auroc), "combo"))
-    return reg, spec
+    return reg, wlig, spec
 
 
 def bars(ax, data, ref, ref_label, xlabel, xlim):
@@ -69,26 +88,30 @@ def bars(ax, data, ref, ref_label, xlabel, xlim):
         ax.spines[s].set_visible(False)
 
 
-def render(reg, spec, out, height):
-    fig, (a, b) = plt.subplots(1, 2, figsize=(10, height))
+def render(reg, wlig, spec, out, height):
+    fig, (a, b, c) = plt.subplots(1, 3, figsize=(15, height))
     clogp_rho = next(v for lab, v, *_ in reg if lab == "cLogP")
-    bars(a, reg, clogp_rho, "cLogP", "Spearman rho vs measured pKd", (-0.2, 0.85))
-    bars(b, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
+    bars(a, reg, clogp_rho, "cLogP", "pooled Spearman rho vs pKd", (-0.2, 0.85))
+    bars(b, wlig, 0.0, "no corr.", "within-ligand Spearman rho vs pKd", (-0.8, 1.0))
+    bars(c, spec, 0.5, "chance", "AUROC: correct vs wrong ligand", (0.0, 1.0))
+    a.set_title("pooled across ligands\n(cLogP competes)", fontsize=9.5)
+    b.set_title("within ligand\n(cLogP constant, drops out)", fontsize=9.5)
+    c.set_title("right vs wrong ligand", fontsize=9.5)
     present = {d[4] for d in reg}
     cats = [c for c in ("aff", "prox", "phys", "dock", "seq", "base", "combo") if c in present]
     handles = [plt.Rectangle((0, 0), 1, 1, color=COL[c]) for c in cats]
     fig.legend(handles, [LABEL[c] for c in cats], fontsize=8.5, loc="lower center",
                ncol=len(cats), frameon=False, bbox_to_anchor=(0.5, 0.0))
     fig.suptitle("Affinity predictors on de-novo protein-small-molecule binders", fontsize=12)
-    fig.tight_layout(rect=(0, 0.05, 1, 0.96))
+    fig.tight_layout(rect=(0, 0.05, 1, 0.95))
     fig.savefig(out, dpi=150, bbox_inches="tight")
     print("saved", out)
 
 
 def main():
     rows, methods = load()
-    render(*stats(rows, SELECT), ROOT / "figures/benchmark.png", 5.2)
-    render(*stats(rows, methods), ROOT / "figures/benchmark_full.png", 8.4)
+    render(*stats(rows, SELECT), ROOT / "figures/benchmark.png", 5.4)
+    render(*stats(rows, methods), ROOT / "figures/benchmark_full.png", 8.6)
 
 
 if __name__ == "__main__":

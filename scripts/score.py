@@ -26,8 +26,10 @@ def _rd(path):
 
 def load():
     truth = {r["id"]: r for r in _rd(ROOT / "reference/experimental_reference_ground_truth.csv")}
+    lig = {r["id"]: r["smiles"] for r in _rd(ROOT / "reference/system_reference.csv")}
     rows = {i: {"id": i, "is_binder": int(t["is_binder"]),
-                "pKd": float(t["experimental_pKD"]) if t["experimental_pKD"] else None}
+                "pKd": float(t["experimental_pKD"]) if t["experimental_pKD"] else None,
+                "ligand": lig.get(i, "")}
             for i, t in truth.items()}
     methods = []
     for p in sorted((ROOT / "predictions").glob("*_predictions.csv")):
@@ -99,6 +101,43 @@ def regression(rows, methods):
         print(f"{m:20s}{f'{rho:+.2f} [{lo:+.2f},{up:+.2f}]':>22s}{sgn * pearson(xs, ys):>+9.2f}{rm:>7s}")
 
 
+def within_ligand_rho(rows, m, kmin=3):
+    """Per-ligand Spearman(metric, pKd) among the de-novo proteins binding that ligand, then the
+    median across ligand groups. Controls for ligand composition: a ligand-only property (cLogP, MW)
+    is constant within a group, so it drops out. Returns (median, [per-group rho], n_groups)."""
+    import collections
+    import statistics
+    sgn = -1 if m in LOWER_BETTER else 1
+    groups = collections.defaultdict(list)
+    for r in rows:
+        if r["is_binder"] == 1 and r["pKd"] is not None and r.get(m) is not None:
+            groups[r["ligand"]].append((sgn * r[m], r["pKd"]))
+    per = [spearman([x for x, _ in g], [y for _, y in g])
+           for g in groups.values() if len(g) >= kmin and len({x for x, _ in g}) > 1]
+    if len(per) < 2:
+        return None, per, len(per)
+    return statistics.median(per), per, len(per)
+
+
+def regression_within_ligand(rows, methods, kmin=3):
+    import random
+    import statistics
+    print("\n== Regression (within-ligand): rank pKd among proteins binding the SAME ligand ==")
+    print("   controls for ligand composition (a ligand-only score is constant per group, so it "
+          f"drops out); median rho over ligands with >= {kmin} binders, direction-corrected")
+    print(f"{'method':20s}{'median rho [95% CI]':>24s}{'n_lig':>7s}")
+    for m in methods:
+        med, per, n = within_ligand_rho(rows, m, kmin)
+        if med is None:
+            continue
+        rng = random.Random(0); boots = []
+        for _ in range(2000):
+            boots.append(statistics.median([per[rng.randrange(n)] for _ in range(n)]))
+        boots.sort()
+        lo, hi = boots[int(0.025 * len(boots))], boots[int(0.975 * len(boots))]
+        print(f"{m:20s}{f'{med:+.2f} [{lo:+.2f},{hi:+.2f}]':>24s}{n:>7d}")
+
+
 def specificity(rows, methods):
     print(f"\n== Specificity: correct vs wrong ligand (AUROC, n={len(rows)}) ==")
     print(f"{'method':20s}{'AUROC [95% CI]':>22s}")
@@ -160,6 +199,7 @@ def main():
     argparse.ArgumentParser().parse_args()
     rows, methods = load()
     regression(rows, methods)
+    regression_within_ligand(rows, methods)
     specificity(rows, methods)
     combine(rows)
 

@@ -59,6 +59,16 @@ def test_dataset_shape():
         assert m in methods
 
 
+def test_within_ligand_drops_constant_ligand_properties():
+    rows, _ = score.load()
+    # cLogP is a ligand-only property: constant within a ligand group, so it yields no within-ligand rho
+    med, _per, n = score.within_ligand_rho(rows, "clogp")
+    assert med is None and n == 0
+    # an interface metric varies across the proteins binding one ligand, so it does
+    med2, _per2, n2 = score.within_ligand_rho(rows, "protenix-iptm")
+    assert n2 >= 2 and med2 is not None
+
+
 def test_every_prediction_joins_to_truth():
     ids = {r["id"] for r in csv.DictReader(
         (ROOT / "reference/experimental_reference_ground_truth.csv").read_text().splitlines())}

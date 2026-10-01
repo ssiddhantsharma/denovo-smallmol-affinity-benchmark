@@ -11,40 +11,51 @@ designs.
 - **11 matched negatives**: the same designed protein paired with a *wrong* ligand (confirmed
   non-binding), so a predictor has to read the interface, not the fold alone.
 
-Each method is scored the same way for all 61 systems and joined to the ground truth by `id`
-(cofolder affinity heads are converted to `pK = 6 - affinity_pred_value`).
+Affinity ranking is scored two ways, and the difference is the main lesson here. **Pooled** Spearman
+runs across all 50 binders at once; because they span 19 different ligands, a pooled correlation is
+dominated by ligand composition (cLogP) rather than the interface. **Within-ligand** Spearman instead
+ranks the de-novo proteins that bind the *same* ligand and takes the median across ligands (the
+analog of the within-target correlation used on de-novo protein sets); a ligand-only score like cLogP
+is constant within a group and drops out, so this isolates whether a method reads the interface.
+Classification (right vs wrong ligand) is one AUROC over all 61. Cofolder affinity heads are
+converted to `pK = 6 - affinity_pred_value`.
 
 ## Results
 
 ![benchmark](figures/benchmark.png)
 
-Left panel: rank affinity among the 50 binders (Spearman vs pKd). Right panel: tell the correct
-ligand from the wrong one across all 61 (AUROC). Bars are 95% bootstrap CIs. This shows one metric
-per model plus the baselines; the full leaderboard (all metrics) is in
-[`figures/benchmark_full.png`](figures/benchmark_full.png), and `score.py` prints every metric.
+Three panels: pooled rank-pKd (left), within-ligand rank-pKd (middle), and right-vs-wrong-ligand
+AUROC (right). Bars are 95% bootstrap CIs. The full leaderboard (all metrics) is in
+[`figures/benchmark_full.png`](figures/benchmark_full.png), and `score.py` prints every number.
 
-- **Ranking affinity is hard.** The dedicated affinity heads do not beat lipophilicity: Boltz-2
-  +0.30, Nesso-1 +0.27, versus cLogP +0.35. Structural confidence edges ahead (Boltz-2 ipTM +0.42);
-  the interface-PAE metrics (min/mean ipae) cluster with it, none breaking out of the 0.3 to 0.4
-  band. CIs are wide at n=50.
-- **Combining does not help.** A leave-one-out combination of four metrics (+0.37) is statistically
-  tied with the best single metric, Boltz-2 ipTM (+0.42): the bootstrap CI on the difference is
-  [-0.31, +0.23], spanning 0. For specificity it trails Boltz-2 ipTM (0.84 vs 0.91). No evidence the
-  metrics carry complementary signal here.
+- **Pooled, composition wins and nothing beats it.** No method clears lipophilicity by a meaningful
+  margin: cLogP +0.35, the affinity heads +0.27 to +0.30, structural confidence +0.32 to +0.42. But
+  cLogP is a ligand property, so a pooled correlation across 19 ligands is largely reading
+  composition, not binding. This is a confound, not a result.
+- **Within ligand, the confound lifts and interface confidence leads.** Controlling for the molecule
+  (median over the 5 ligands with >= 3 protein binders), cLogP and MW are constant and drop out
+  entirely, and the interface-confidence metrics come to the front: Protenix ipTM +0.65, Protenix
+  lig-ipTM +0.65, Boltz-2 ipTM +0.60, interface-PAE in the same band. The physics and ML rescorers
+  are middling (SQM +0.33, AEV-PLIG +0.35, GNINA +0.30) and the affinity heads trail (Boltz-2 +0.30,
+  Nesso-1 -0.05). This is the *same* metric family (iPTM / ipSAE / interface-PAE) that ranks KD on
+  de-novo protein sets. CIs are very wide (only 5 ligand groups, 3 to 9 binders each), so the ordering
+  is suggestive, not decisive.
+- **Specificity still belongs to the co-folders.** On telling the correct ligand from the wrong one,
+  Boltz-2 / Protenix ipTM reach 0.85 to 0.91; cLogP, dtSFM, and the physics/ML rescorers are all near
+  chance.
 - **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
-  dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, drops to chance on de
-  novo: AUROC 0.53 (right vs wrong ligand) and Spearman +0.19 (pKd), *below* the cLogP baseline. Yet
-  its featurization validates on in-distribution natural pairs (true-vs-shuffled AUROC 0.863; see
-  `scripts/run_dtsfm.py`, which gates on that positive control before scoring). So neither a
-  structural co-folder nor a sequence-native FM escapes the natural-to-de-novo distribution shift.
-- **A physics scorer matches the best co-folder.** Rowan's SQM (semi-empirical QM, with no training
-  on binding data) ranks pKd at +0.40, level with Boltz-2 ipTM and above cLogP; the learned rescorers
-  GNINA (+0.35) and AEV-PLIG (+0.32) only match cLogP. Details in
-  [Rowan physics / docking rescoring](#rowan-physics--docking-rescoring).
+  dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at chance on de
+  novo (AUROC 0.53, within-ligand +0.10), yet its featurization validates on in-distribution natural
+  pairs (true-vs-shuffled AUROC 0.863; `scripts/run_dtsfm.py` gates on that positive control first).
+
+> An earlier version of this README read the pooled numbers as "SQM, a physics scorer, matches the
+> best co-folder and beats cLogP." The within-ligand control shows that was a composition artifact:
+> SQM is middling once the ligand is held fixed, and cLogP cannot compete at all.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
-| rank pKd (Spearman) | +0.42 | +0.35 | +0.37 (tied) |
+| rank pKd, pooled (Spearman) | +0.42 | +0.35 | +0.37 (tied) |
+| rank pKd, within-ligand (median Spearman) | +0.65 | n/a (constant) | not defined |
 | tell right from wrong ligand (AUROC) | 0.91 | 0.54 | 0.84 |
 
 ## Caveats
@@ -87,23 +98,24 @@ pose (the best-ranked of Protenix v2's 5 samples per system), fed to Rowan throu
 mode; SQM additionally runs a protonation (protein-preparation) step first. Wiring is in
 `scripts/run_rowan.py`.
 
-- **Physics (SQM) reaches the top tier with no training on binding data.** PM6-D3H4X/COSMO2
-  single-point scoring tracks pKd at Spearman +0.40 [+0.10, +0.64] over the 46 binders it can score,
-  level with the best co-folding metric (Boltz-2 ipTM +0.42) and above cLogP (+0.35). A physics method
-  that never saw a binding measurement, ranking de-novo affinity as well as the best learned
-  co-folder, is the clearest sign yet that the natural-to-de-novo wall is a *learning* artifact rather
-  than a hard limit.
-- **The learned rescorers do not escape the wall.** GNINA (+0.35) and AEV-PLIG (+0.32), both trained
-  on natural complexes (PDBbind-style), land right at cLogP, the same place the co-folding affinity
-  heads sit.
-- **None of them help with specificity.** On telling the correct ligand from the wrong one, SQM
-  (0.57), GNINA (0.58), and AEV-PLIG (0.47) are all near chance, far below co-folder ipTM (0.91). The
-  physics signal is for ranking affinity among binders, not for rejecting decoys.
+- **Pooled, SQM looks strong, but that is the composition confound.** On the pooled Spearman, SQM
+  reaches +0.40 [+0.10, +0.64] over the 46 binders it can score, apparently level with Boltz-2 ipTM
+  and above cLogP. Held to the within-ligand control, though, SQM falls to +0.33 and sits below the
+  interface-confidence metrics (ipTM ~0.6); the pooled edge was reading ligand composition, the same
+  thing cLogP reads, not the interface.
+- **The learned rescorers do not escape the wall either.** GNINA (pooled +0.35, within-ligand +0.30)
+  and AEV-PLIG (pooled +0.32, within-ligand +0.35), both trained on natural complexes (PDBbind-style),
+  track cLogP pooled and stay middling within-ligand.
+- **None of the three help with specificity.** On telling the correct ligand from the wrong one, SQM
+  (0.57), GNINA (0.58), and AEV-PLIG (0.47) are all near chance, far below co-folder ipTM (0.91).
 
-Caveats: SQM's CI is wide at this n, and its truncated-pocket energies are noisy (cut salt bridges
-leave some pockets electrostatically incomplete). Neither SQM nor AEV-PLIG can score the four
-silicon-rhodamine dye systems (COSMO2 has no Si parameters; AEV-PLIG rejects the Si poses), so those
-cells are blank; GNINA scores all 61.
+So physics and docking rescoring do not beat the co-folders' own interface-confidence metrics here;
+the honest read is that nothing in this family clears the bar that ipTM already sets within-ligand.
+
+Caveats: SQM's truncated-pocket energies are noisy (cut salt bridges leave some pockets
+electrostatically incomplete). Neither SQM nor AEV-PLIG can score the four silicon-rhodamine dye
+systems (COSMO2 has no Si parameters; AEV-PLIG rejects the Si poses), so those cells are blank; GNINA
+scores all 61.
 
 ## Layout
 
