@@ -88,7 +88,8 @@ def bootstrap_ci(xs, ys, stat, n_boot=2000, seed=0):
 
 def regression(rows, methods):
     b = [r for r in rows if r["is_binder"] == 1 and r["pKd"] is not None]
-    print(f"\n== Regression: rank measured pKd (binders, n={len(b)}) ==")
+    print(f"\n== Regression (POOLED; confounded by ligand composition, see within-ligand below): "
+          f"rank pKd (binders, n={len(b)}) ==")
     print(f"{'method':20s}{'rho [95% CI]':>22s}{'pearson':>9s}{'RMSE':>7s}")
     for m in methods:
         v = [(r[m], r["pKd"]) for r in b if r.get(m) is not None]
