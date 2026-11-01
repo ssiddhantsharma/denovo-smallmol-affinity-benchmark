@@ -22,6 +22,13 @@ def refs():
 
 
 def write(method, vals):
+    # Refuse to emit an all-empty file over a good one. Running this with _work/boltz_out missing
+    # used to overwrite the committed Boltz PAE columns with blanks -- no error, no exit code, the
+    # data simply gone. A missing fold is a reason to stop, not to publish nothing.
+    if not vals:
+        raise SystemExit(f"{method}: no inputs found -- refusing to overwrite "
+                         f"predictions/{method}_predictions.csv with empty values. "
+                         f"The fold outputs it reads are missing from _work/.")
     with open(ROOT / f"predictions/{method}_predictions.csv", "w", newline="") as f:
         w = csv.writer(f); w.writerow(["method", "id", "predicted_affinity"])
         for r in refs():

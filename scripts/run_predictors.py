@@ -15,6 +15,7 @@ import csv
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,22 @@ def run_protenix():
            f'-i {WORK}/px_in.json -o {WORK}/px_out -s 101 -n protenix-v2 '
            f'--use_msa false --use_default_params true')
     subprocess.run(["bash", "-c", cmd], check=True)
+    parse_protenix()
+
+
+def parse_protenix():
+    """Re-derive the Protenix metrics from folds already in _work/px_out. No GPU, no re-fold.
+
+    Split out of run_protenix so a saved fold can be re-scored from code rather than from memory
+    of what was run. Needs _work/protenix.json (the manifest the fold was launched with) and
+    _work/px_out; write_pred iterates refs(), so systems since dropped from the reference are
+    not emitted even when the manifest still lists them.
+    """
+    J = WORK / "protenix.json"
+    py = os.environ.get("PROTENIX_PY", sys.executable)
+    sc = str(ROOT / "scripts/protenix_score.py")
+    if not J.exists() or not (WORK / "px_out").exists():
+        raise SystemExit(f"need {J} and {WORK / 'px_out'} (both gitignored) to re-parse a fold")
     subprocess.run([py, sc, "parse", "--in", str(J), "--outdir", str(WORK / "px_out"), "--seed", "101"],
                    check=True)
     s = {r["id"]: r for r in json.loads(J.read_text())}
@@ -117,9 +134,9 @@ def run_baselines():
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["boltz", "nesso", "protenix", "baselines"])
+    ap.add_argument("mode", choices=["boltz", "nesso", "protenix", "protenix-parse", "baselines"])
     {"boltz": run_boltz, "nesso": run_nesso, "protenix": run_protenix,
-     "baselines": run_baselines}[ap.parse_args().mode]()
+     "protenix-parse": parse_protenix, "baselines": run_baselines}[ap.parse_args().mode]()
 
 
 if __name__ == "__main__":
