@@ -102,22 +102,34 @@ def regression(rows, methods):
         print(f"{m:20s}{f'{rho:+.2f} [{lo:+.2f},{up:+.2f}]':>22s}{sgn * pearson(xs, ys):>+9.2f}{rm:>7s}")
 
 
-def within_ligand_rho(rows, m, kmin=3):
-    """Per-ligand Spearman(metric, pKd) among the de-novo proteins binding that ligand, then the
-    median across ligand groups. Controls for ligand composition: a ligand-only property (cLogP, MW)
-    is constant within a group, so it drops out. Returns (median, [per-group rho], n_groups)."""
+def per_ligand_rho(rows, m, kmin=3):
+    """{ligand: Spearman(metric, pKd)} over the de-novo proteins binding that ligand, plus the
+    pair count. Keyed by ligand, not positional, because two metrics are not scored on the same
+    ligand set -- pairing them by list position silently compares different ligands."""
     import collections
-    import statistics
     sgn = -1 if m in LOWER_BETTER else 1
     groups = collections.defaultdict(list)
     for r in rows:
         if r["is_binder"] == 1 and r["pKd"] is not None and r.get(m) is not None:
             groups[r["ligand"]].append((sgn * r[m], r["pKd"]))
-    per = [spearman([x for x, _ in g], [y for _, y in g])
-           for g in groups.values() if len(g) >= kmin and len({x for x, _ in g}) > 1]
+    used = {k: g for k, g in groups.items()
+            if len(g) >= kmin and len({x for x, _ in g}) > 1}
+    per = {k: spearman([x for x, _ in g], [y for _, y in g]) for k, g in used.items()}
+    return per, sum(len(g) for g in used.values())
+
+
+def within_ligand_rho(rows, m, kmin=3):
+    """Per-ligand Spearman then the median across ligand groups. Controls for ligand composition:
+    a ligand-only property (cLogP, MW) is constant within a group, so it drops out.
+
+    Returns (median, {ligand: rho}, n_groups, n_pairs). n_pairs is the number of measured
+    (protein, ligand) pairs that actually reach the median -- NOT the 60 pairs in the benchmark.
+    Most ligands here have one or two binders and contribute nothing to a within-ligand rank."""
+    import statistics
+    per, n_pairs = per_ligand_rho(rows, m, kmin)
     if len(per) < 2:
-        return None, per, len(per)
-    return statistics.median(per), per, len(per)
+        return None, per, len(per), n_pairs
+    return statistics.median(per.values()), per, len(per), n_pairs
 
 
 def regression_within_ligand(rows, methods, kmin=3):
@@ -126,17 +138,76 @@ def regression_within_ligand(rows, methods, kmin=3):
     print("\n== Regression (within-ligand): rank pKd among proteins binding the SAME ligand ==")
     print("   controls for ligand composition (a ligand-only score is constant per group, so it "
           f"drops out); median rho over ligands with >= {kmin} binders, direction-corrected")
-    print(f"{'method':20s}{'median rho [95% CI]':>24s}{'n_lig':>7s}")
+    print(f"{'method':20s}{'median rho [95% CI]':>24s}{'n_lig':>7s}{'n_pairs':>9s}")
     for m in methods:
-        med, per, n = within_ligand_rho(rows, m, kmin)
+        med, per, n, n_pairs = within_ligand_rho(rows, m, kmin)
         if med is None:
             continue
+        vals = list(per.values())
         rng = random.Random(0); boots = []
         for _ in range(2000):
-            boots.append(statistics.median([per[rng.randrange(n)] for _ in range(n)]))
+            boots.append(statistics.median([vals[rng.randrange(n)] for _ in range(n)]))
         boots.sort()
         lo, hi = boots[int(0.025 * len(boots))], boots[int(0.975 * len(boots))]
-        print(f"{m:20s}{f'{med:+.2f} [{lo:+.2f},{hi:+.2f}]':>24s}{n:>7d}")
+        print(f"{m:20s}{f'{med:+.2f} [{lo:+.2f},{hi:+.2f}]':>24s}{n:>7d}{n_pairs:>9d}")
+    print("   n_lig is the number of ligands the median is taken over, n_pairs the measured "
+          "points behind it.\n   Neither is 60: a ligand with fewer than "
+          f"{kmin} binders cannot support a rank and is dropped.")
+
+
+def separability(rows, methods, kmin=3, n_boot=4000):
+    """Which metrics are actually distinguishable from the best one, and which are not.
+
+    A table of point estimates reads as a ranking even when the intervals swamp the gaps -- the
+    same objection that sinks most published score comparisons, and it bites hard here: the
+    within-ligand median is taken over single-digit numbers of ligands.
+
+    Paired bootstrap resampling LIGANDS (the independent unit, not pairs), restricted to the
+    ligands BOTH metrics scored, so the two medians always describe the same groups.
+    """
+    import random
+    import statistics
+
+    per_metric = {}
+    for m in methods:
+        per, _ = per_ligand_rho(rows, m, kmin)
+        if len(per) >= 2:
+            per_metric[m] = per
+    if len(per_metric) < 2:
+        return
+
+    best = max(per_metric, key=lambda m: statistics.median(per_metric[m].values()))
+    bper = per_metric[best]
+    bmed = statistics.median(bper.values())
+    print("\n== Separability: is anything actually worse than the best metric? ==")
+    print(f"   paired bootstrap over the ligand groups BOTH metrics scored (best has {len(bper)})")
+    print(f"   best = {best} (median rho {bmed:+.2f})")
+    print(f"{'method':20s}{'median rho':>12s}{'shared':>8s}"
+          f"{'delta vs best [95% CI]':>28s}{'separable?':>12s}")
+    for m, per in sorted(per_metric.items(), key=lambda kv: -statistics.median(kv[1].values())):
+        med = statistics.median(per.values())
+        if m == best:
+            print(f"{m:20s}{med:>+12.2f}{len(per):>8d}{'-':>28s}{'(best)':>12s}")
+            continue
+        shared = sorted(set(per) & set(bper))
+        if len(shared) < 2:
+            print(f"{m:20s}{med:>+12.2f}{len(shared):>8d}{'too few shared ligands':>28s}{'-':>12s}")
+            continue
+        bv = [bper[k] for k in shared]; mv = [per[k] for k in shared]
+        rng = random.Random(0); k = len(shared); deltas = []
+        for _ in range(n_boot):
+            idx = [rng.randrange(k) for _ in range(k)]
+            deltas.append(statistics.median([bv[i] for i in idx])
+                          - statistics.median([mv[i] for i in idx]))
+        deltas.sort()
+        lo, hi = deltas[int(0.025 * n_boot)], deltas[int(0.975 * n_boot)]
+        d = statistics.median(bv) - statistics.median(mv)
+        print(f"{m:20s}{med:>+12.2f}{k:>8d}"
+              f"{f'{d:+.2f} [{lo:+.2f},{hi:+.2f}]':>28s}{'yes' if lo > 0 else 'NO':>12s}")
+    print("   'NO' = the interval spans zero: the point estimates differ, the metrics do not.")
+    print(f"   Uncorrected for the {len(per_metric) - 1} comparisons made, so a lone 'yes' here is "
+          "weak evidence; read the column as\n   'almost nothing in this table is separable', "
+          "which is the honest summary of a 5-ligand median.")
 
 
 def specificity(rows, methods):
@@ -201,6 +272,7 @@ def main():
     rows, methods = load()
     regression(rows, methods)
     regression_within_ligand(rows, methods)
+    separability(rows, methods)
     specificity(rows, methods)
     combine(rows)
 

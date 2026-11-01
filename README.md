@@ -35,6 +35,13 @@ transparency.
   affinity heads trail (Boltz-2 +0.30, Nesso-1 -0.05). This is the same confidence family (iPTM, pTM,
   pLDDT, interface-PAE) that ranks KD on de-novo *protein* sets. CIs are very wide (only 5 ligand
   groups, 3 to 9 binders each), so the ordering is suggestive, not decisive.
+- **Almost none of that ordering is statistically separable, and the table says so.** `score.py`
+  runs a paired bootstrap over the ligands *both* metrics scored, and **18 of 21** metrics are not
+  distinguishable from the top one. The only three the top metric beats with an interval clear of
+  zero are Nesso-1 P(bind), SQM, and Nesso-1 -- and that is before correcting for 21 comparisons,
+  so even those are weak. Read the left panel as a rough ordering of families, never as a ranking
+  of individual metrics: "Protenix ipTM +0.65 beats Boltz-2 ipTM +0.60" is not a finding, it is
+  two medians over the same five ligands.
 - **Specificity also belongs to the co-folders.** On telling the correct ligand from the wrong one,
   the interface-confidence metrics lead: Boltz-2 / Protenix ipTM 0.85 to 0.91, Protenix pLDDT-ligand
   0.86, pTM 0.79. cLogP, dtSFM, and the physics/ML rescorers are near chance. A pure-geometry pose
@@ -52,6 +59,13 @@ transparency.
 | tell right from wrong ligand (AUROC) | 0.91 | 0.53 | 0.84 |
 
 ## Caveats
+
+**The within-ligand axis rests on far less data than "60 pairs" suggests.** Only 5 of the 19
+ligands have the >= 3 protein binders a within-ligand rank needs, so that median is taken over
+**5 ligands / 30 pairs** for most metrics (3 ligands / 18 pairs for `interface-ligburial`, which is
+missing some poses). The figure prints that n beside every bar and `score.py` prints it as `n_lig`
+and `n_pairs`, because a bar without its n reads as a ranking. The other 14 ligands contribute to
+the AUROC panel (all 60 pairs) but not to the affinity panel.
 
 Small n (49 + 11): CIs are wide and orderings are suggestive. The 11 negatives are confirmed
 non-binders from a handful of designed proteins. This small n reflects the field, not the search: a

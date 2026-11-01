@@ -85,11 +85,30 @@ def test_dataset_validated():
 def test_within_ligand_drops_constant_ligand_properties():
     rows, _ = score.load()
     # cLogP is a ligand-only property: constant within a ligand group, so it yields no within-ligand rho
-    med, _per, n = score.within_ligand_rho(rows, "clogp")
-    assert med is None and n == 0
+    med, _per, n, npairs = score.within_ligand_rho(rows, "clogp")
+    assert med is None and n == 0 and npairs == 0
     # an interface metric varies across the proteins binding one ligand, so it does
-    med2, _per2, n2 = score.within_ligand_rho(rows, "protenix-iptm")
+    med2, _per2, n2, npairs2 = score.within_ligand_rho(rows, "protenix-iptm")
     assert n2 >= 2 and med2 is not None
+    # n_pairs must be the points actually behind the median, not the size of the benchmark
+    assert n2 * 3 <= npairs2 < len(rows), "n_pairs should be >= 3 per group and well under 60"
+
+
+def test_per_ligand_rho_is_keyed_by_ligand():
+    """The separability bootstrap pairs two metrics by ligand. If the keys were positional, a
+    metric scored on 3 ligands would be compared against 3 arbitrary slots of a 5-ligand metric --
+    silently comparing different ligands. Keys must be the ligands themselves."""
+    rows, _ = score.load()
+    ligands = {r["ligand"] for r in rows}
+    per, npairs = score.per_ligand_rho(rows, "protenix-iptm")
+    assert set(per) <= ligands and len(per) >= 2
+    assert npairs == sum(
+        1 for r in rows
+        if r["ligand"] in per and r["is_binder"] == 1 and r["pKd"] is not None
+        and r.get("protenix-iptm") is not None)
+    # a metric with fewer scored groups must intersect, not line up by position
+    sparse, _ = score.per_ligand_rho(rows, "interface-ligburial")
+    assert set(sparse) <= set(per), "sparser metric should be a subset, so the intersection is real"
 
 
 def test_every_prediction_joins_to_truth():
