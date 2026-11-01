@@ -8,9 +8,12 @@ best-ranked sample per system (no re-folding) and writes them as predictions.
   protenix-plddt-binder   chain A (binder protein) pLDDT
   protenix-plddt-ligand   chain B (ligand) pLDDT
 
-ipSAE and LIS (Anthropic's strongest metrics) are protein-protein interface scores built from the
-full residue-residue PAE matrix, which Protenix did not save here; their protein-small-molecule
-analog is lig-ipTM + interface-PAE, already in the benchmark. Higher is more confident.
+ipSAE, ipDAE and LIS (Anthropic's strongest metrics) are protein-protein interface scores built
+from the full residue-residue PAE matrix. PROTENIX did not save that matrix here -- only the 2x2
+chain-level `chain_pair_pae_{min,mean}` reduction in the summary jsons -- so none of the three can
+be computed from these outputs without re-folding. Boltz-2 DID save it (`--write_full_pae`), and
+`run_ipdae.py` computes ipDAE from those; this file's metrics are the Protenix-side substitutes.
+Higher is more confident.
 """
 
 import csv

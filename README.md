@@ -94,12 +94,46 @@ please cite the original work when using any result here.
 | `interface-ncontacts`, `interface-ligburial` | protein-ligand contacts and ligand burial from the pose | interface geometry | `scripts/run_interface.py` (gemmi) |
 
 The confidence metrics cover the de-novo metric set used on protein binders (iPTM, pTM, pLDDT,
-interface-PAE, contacts). ipSAE and LIS, the strongest there, are protein-protein scores built from
-the full residue-residue PAE matrix; that matrix was not saved here, and for a few-atom ligand their
-natural analog is lig-ipTM plus interface-PAE, which are included.
+interface-PAE, contacts). ipSAE, ipDAE and LIS, the strongest there, are protein-protein scores
+built from the full residue-residue PAE matrix. Which of them is available depends on the folder,
+and an earlier version of this README wrongly said the matrix "was not saved here" across the
+board:
+
+| folder | full residue-residue PAE | consequence |
+|---|---|---|
+| Boltz-2 | **saved** (`--write_full_pae`) | ipDAE is computable with no GPU -- `scripts/run_ipdae.py` |
+| Protenix | not saved, only `chain_pair_pae_{min,mean}` | ipSAE/ipDAE/LIS would need a re-fold |
+
+For a few-atom ligand the natural analog of these scores is lig-ipTM plus interface-PAE, which are
+included for both folders.
 
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.
+
+## ipDAE: implemented, not yet run
+
+`scripts/run_ipdae.py` ports BindCraft2's `i_pDAE` to a protein-ligand interface and writes
+`boltz-2-ipdae`. The math is unit-tested; **it has not been run against the real folds**, because
+`_work/` is gitignored and the Boltz-2 outputs live on the box that did the folding. Nothing in the
+results above includes it. Two things worth knowing before reading anything into it when it does
+run:
+
+- **Contact is heavy-atom at 4.5 Å, not CA-CA at 8 Å.** A ligand has no CA. This matches the
+  definition `run_interface.py` already uses, so the metrics agree on what the interface is.
+- **d0 saturates, so ipDAE is less novel here than on a protein interface.** Its partner-count
+  scale only exceeds 1.0 at **27+ partners** (verified numerically, pinned by a test). A ligand
+  atom never contacts 27 residues, so d0 pins to 1.0 and the score reduces to the max over anchors
+  of mean `1/(1+PAE²)`. That is not a monotone transform of mean interface PAE -- the nonlinearity
+  comes before the average and the max picks one anchor -- but it reads the same matrix as
+  `boltz-2-pae-{min,mean}`, which are already here at within-ligand +0.62 / +0.50. Given that 18 of
+  21 metrics are already not separable from the top one, expect ipDAE to land inside that same
+  blob rather than to add an independent axis. `--report` prints the measured fraction of anchors
+  with d0 > 1 so this is checked, not assumed.
+
+The script refuses to guess: it fails loudly if the structure's residue count disagrees with the
+sequence, or if the PAE token count is not `len(protein) + n_ligand_heavy_atoms`. Boltz-2's PAE is
+paired with Boltz-2's own structure -- crossing it with the Protenix pose that `run_interface.py`
+reads would score one model's confidence against another model's coordinates.
 
 ## Rowan physics / docking rescoring
 
@@ -146,6 +180,7 @@ CUDA_VISIBLE_DEVICES=0 BOLTZ=/path/to/boltz            python scripts/run_predic
 CUDA_VISIBLE_DEVICES=0 NESSO=/path/to/nesso            python scripts/run_predictors.py nesso
 CUDA_VISIBLE_DEVICES=0 PROTENIX_DIR=/path/to/Protenix  python scripts/run_predictors.py protenix
 python scripts/run_predictors.py baselines
+python scripts/run_ipdae.py --report   # ipDAE from the saved Boltz-2 PAE; needs _work/boltz_out
 python scripts/score.py
 python scripts/make_figure.py
 

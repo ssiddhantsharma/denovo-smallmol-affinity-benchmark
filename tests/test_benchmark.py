@@ -126,3 +126,51 @@ def test_score_runs():
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     assert "Regression" in r.stdout and "AUROC" in r.stdout
+
+
+def _load_ipdae():
+    spec = importlib.util.spec_from_file_location("run_ipdae", ROOT / "scripts/run_ipdae.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_ipdae_d0_saturates_below_27_partners():
+    """The whole reason ipDAE behaves differently on a ligand than on a protein partner.
+
+    d0 only exceeds 1.0 at 27+ partners. A ligand atom never contacts 27 residues, so on these
+    interfaces d0 pins to 1.0 and the partner-count scaling does nothing. If this threshold ever
+    moves, the docstring's claim about saturation is wrong and should move with it.
+    """
+    import numpy as np
+    d0 = _load_ipdae().d0_from_partner_count
+    assert float(d0(np.array([26]))[0]) == 1.0
+    assert float(d0(np.array([27]))[0]) > 1.0
+    assert float(d0(np.array([1]))[0]) == 1.0
+
+
+def test_ipdae_masks_to_contacts_and_ranks_by_pae():
+    """A perfectly confident contact scores 1.0, worse PAE scores lower, and -- the one that
+    actually catches bugs -- PAE *outside* the contact set must not move the score at all."""
+    import numpy as np
+    m = _load_ipdae()
+    contact = np.array([[True, False], [False, True]])
+
+    perfect, _ = m.ipdae_from_block(np.zeros((2, 2)), contact)
+    assert perfect == 1.0  # d0 = 1, tm = 1/(1+0)
+
+    worse, _ = m.ipdae_from_block(np.full((2, 2), 5.0), contact)
+    assert 0.0 < worse < perfect
+
+    base = np.array([[1.0, 99.0], [99.0, 1.0]])
+    noise = np.array([[1.0, 0.0], [0.0, 1.0]])  # same contacts, wildly different non-contacts
+    assert m.ipdae_from_block(base, contact)[0] == m.ipdae_from_block(noise, contact)[0]
+
+
+def test_ipdae_refuses_empty_and_mismatched_input():
+    import numpy as np
+    import pytest
+    m = _load_ipdae()
+    assert m.ipdae_from_block(np.zeros((2, 2)), np.zeros((2, 2), dtype=bool)) == (None, None)
+    with pytest.raises(ValueError):
+        m.ipdae_from_block(np.zeros((2, 3)), np.ones((2, 2), dtype=bool))
