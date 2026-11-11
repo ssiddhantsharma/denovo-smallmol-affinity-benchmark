@@ -1,4 +1,10 @@
 {
-  "europepmc_ids": [],
-  "last_window_start": ""
+  "europepmc_ids": [
+    "42742342",
+    "42767172",
+    "42983184",
+    "PPR1291005",
+    "PPR1294457"
+  ],
+  "last_window_start": "2026-07-14"
 }
