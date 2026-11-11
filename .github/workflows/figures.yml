@@ -1,0 +1,69 @@
+name: figures
+
+# Not a cron. This fires when predictions land on main - i.e. when the local
+# GPU+Rowan driver has scored new rows and pushed them. It re-runs the scoring
+# and redraws the figure so the README never shows numbers from an older set
+# than the CSVs beside it.
+#
+# CI owns the committed figure. Regenerating locally is fine for looking, but
+# the version in git is whatever this workflow produced, so a Mac-vs-Linux font
+# difference does not show up as a spurious diff on every contributor's machine.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'predictions/**'
+      - 'reference/**'
+      - 'scripts/score.py'
+      - 'scripts/make_figure.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # two pushes in quick succession would otherwise race to commit the same file
+  group: figures-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  figures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # pinned: an unpinned matplotlib silently changes the rendering and every
+      # run commits a figure that differs from the last for no reason anyone can see
+      - run: pip install numpy scikit-learn rdkit 'matplotlib==3.10.9'
+
+      - name: qc before touching anything
+        run: python scripts/qc_dataset.py
+
+      - name: score
+        run: python scripts/score.py | tee /tmp/score.txt
+
+      - name: redraw
+        run: python scripts/make_figure.py
+
+      - name: commit the figure if it changed
+        run: |
+          git diff --quiet -- figures/ && { echo "figure unchanged"; exit 0; }
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add figures/
+          git commit -m "Refresh figures for ${GITHUB_SHA::7}"
+          git push
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Scores"
+            echo '```'
+            tail -40 /tmp/score.txt 2>/dev/null || echo "(scoring did not run)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

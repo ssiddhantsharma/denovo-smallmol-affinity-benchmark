@@ -207,6 +207,7 @@ reference/source_watermarks.json                     what the weekly watcher has
 scripts/qc_dataset.py                                17 integrity checks, run on every PR
 scripts/check_sources.py                             the watcher: one Europe PMC query, no model
 scripts/append_paper.py                              the only thing that writes reference/
+scripts/update.py                                    the GPU+Rowan half, dry-run by default
 .claude/agents, .claude/skills                       the extract/verify agents and the skill
 ```
 
@@ -253,6 +254,29 @@ not automated, on purpose.
 **On every PR** touching `reference/` or `predictions/`, `.github/workflows/qc.yml` runs the
 17 integrity checks, with the row-count floor read from the PR's base branch so the set
 cannot silently shrink.
+
+**`scripts/update.py` is the one command for the scoring half**, run on the GPU box:
+
+```
+python scripts/update.py                                # what needs scoring; no GPU, no credits
+python scripts/update.py --all --max-credits 200 --max-systems 10
+```
+
+It finds reference rows no predictions file covers, co-folds them, submits to Rowan and
+re-scores. It is dry-run by default, refuses to submit without `--max-credits`, and
+`--max-systems` bounds a session — Rowan's cap is per workflow, so it cannot bound one on
+its own.
+
+This half stays local on purpose. Rowan is hosted and would run in CI happily, but its
+scorers need a bound **pose**, and the pose comes from Protenix or Boltz on a GPU. Moving
+the Rowan call into Actions would mean putting a paid API key into a public repo's CI to
+automate a step that still could not run without the GPU output.
+
+**Pushing `predictions/` is what updates the plots.** `.github/workflows/figures.yml`
+re-runs `score.py` and redraws on any push to `main` that touches `predictions/` or
+`reference/`, and commits the figure — so the README never shows numbers from an older set
+than the CSVs beside it. CI owns the committed figure, with matplotlib pinned, so a local
+redraw on a different OS is not a spurious diff.
 
 ## Reproduce
 
