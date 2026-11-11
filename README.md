@@ -246,7 +246,9 @@ outside 2–13 (the unit-slip guard), and dedups on (sequence, canonical SMILES)
 
 **After appending, the new rows are in no figure.** They have no predictions, so
 `qc_dataset.py` fails its "predictions cover exactly the reference ids" check — that failure
-is the reminder, not a bug. Running the predictors needs a GPU and is the only paid step.
+is the reminder, not a bug. Run the predictors locally on the GPU box (the *Reproduce*
+commands below), which for a few new rows is a minutes-long job; it is the one step that is
+not automated, on purpose.
 
 **On every PR** touching `reference/` or `predictions/`, `.github/workflows/qc.yml` runs the
 17 integrity checks, with the row-count floor read from the PR's base branch so the set

@@ -27,7 +27,13 @@ Already present? `cut -d, -f6 reference/system_reference.csv | sort -u` lists th
 
 5. **Check.** `python scripts/qc_dataset.py`. It will now FAIL on "every predictions file covers exactly the reference ids" — that is correct and is the reminder for step 6, not a bug.
 
-6. **Predict.** The new rows have no predictions, so they are in the reference set but in no figure. Run the predictors over them (`scripts/run_predictors.py` and friends). **This needs a GPU and is the only paid step** — confirm before launching it.
+6. **Predict.** The new rows have no predictions, so they are in the reference set but in no figure. Run the predictors over them **locally, on the GPU box** — the same commands as *Reproduce* in the README, one cofolder at a time:
+
+   ```
+   CUDA_VISIBLE_DEVICES=0 BOLTZ=/path/to/boltz python scripts/run_predictors.py boltz
+   ```
+
+   This is the only step that needs a GPU, and it is deliberately not in CI: a few new rows at a time is a minutes-long local run, not something worth wiring to cloud compute.
 
 7. **Rescore and refresh.** `python scripts/score.py`, then `scripts/make_figure.py`. Re-run `qc_dataset.py`; it should pass now.
 
