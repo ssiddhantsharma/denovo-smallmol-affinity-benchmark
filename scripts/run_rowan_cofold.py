@@ -42,7 +42,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "reference" / "system_reference.csv"
 PRED = ROOT / "predictions"
-STATE = ROOT / "_work" / "rowan_cofold_submitted.json"
+# TRACKED, not scratch. Two reasons. Submit and collect are separate runs because
+# Rowan executes server-side, and a GitHub Actions runner is destroyed between
+# them -- a state file under _work/ would lose every workflow id and the credits
+# with it. And the map from a row to the workflow that produced its number is
+# provenance worth keeping anyway.
+STATE = ROOT / "reference" / "rowan_cofold_workflows.json"
 
 # column -> how to pull it out of a CofoldingResult, and which way is better
 COLUMNS = {

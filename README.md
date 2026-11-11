@@ -278,9 +278,29 @@ python scripts/update.py --all --max-credits 200 --max-systems 10
 Both are dry-run by default and refuse to submit without `--max-credits`; `--max-systems`
 bounds a session, since Rowan caps per workflow rather than per run.
 
-What is kept off a public repo's Actions is the **API key**, not the compute. Rowan charges
-credits, and an unattended workflow holding a paid key is an attack surface bought for
-little — the submission is a one-line local command either way.
+**Or run it from CI.** `.github/workflows/rowan.yml` does the same thing with the key as a
+repository secret:
+
+```
+gh secret set ROWAN_API_KEY          # once
+gh workflow run rowan                # draft by default: validates, spends nothing
+gh workflow run rowan -f draft=false -f max_systems=2 -f max_credits=50
+gh workflow run rowan -f action=collect
+```
+
+It is `workflow_dispatch` **only** — no push or schedule trigger, so nothing spends
+unattended, and GitHub restricts manual dispatch to users with write access. Fork pull
+requests never receive repository secrets, and no workflow here uses `pull_request_target`,
+which is the trigger that would hand a fork's code the key. Every run is capped twice
+(`max_credits` per Rowan workflow, `max_systems` for the session) and `draft` defaults to
+true.
+
+Collecting commits the predictions, which triggers the figures workflow, which redraws —
+so the loop from "new row" to "updated plot" closes without a local step.
+
+The id → Rowan workflow map lives in `reference/rowan_cofold_workflows.json` rather than
+`_work/`, because submit and collect are separate runs on separate runners: scratch state
+would lose the workflow ids, and the credits with them.
 
 **Pushing `predictions/` is what updates the plots.** `.github/workflows/figures.yml`
 re-runs `score.py` and redraws on any push to `main` that touches `predictions/` or

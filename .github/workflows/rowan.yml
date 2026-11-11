@@ -1,0 +1,108 @@
+name: rowan
+
+# Scores new rows through Rowan's hosted co-folding, from CI.
+#
+# SAFETY, because this holds a paid API key in a public repository:
+#
+#   * workflow_dispatch ONLY. There is no push or schedule trigger, so nothing
+#     spends credits unattended. GitHub restricts manual dispatch to users with
+#     write access, so only a maintainer can start a run.
+#   * Secrets are never exposed to workflows triggered by pull_request from a
+#     fork, and this workflow has no pull_request trigger at all. There is no
+#     pull_request_target anywhere in this repo - that is the trigger that would
+#     hand a fork's code the key.
+#   * Every run is capped twice: max_credits per Rowan workflow, and max_systems
+#     for the session. Rowan's own cap is per workflow, so without the second one
+#     a large cohort could spend without bound.
+#   * draft defaults to TRUE. The first run of any change should be a draft: it
+#     validates the whole submission path, executes nothing and costs nothing.
+#
+# Set the key once:  gh secret set ROWAN_API_KEY
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'submit new rows, or collect finished workflows'
+        type: choice
+        options: [submit, collect]
+        default: submit
+      draft:
+        description: 'submit: validate the path, execute nothing, spend nothing'
+        type: boolean
+        default: true
+      max_credits:
+        description: 'per-workflow credit cap'
+        default: '50'
+      max_systems:
+        description: 'how many systems this run may submit'
+        default: '5'
+      model:
+        description: 'boltz_2 | boltz_2_1 | openfold_3 | chai_1r | esmfold_2'
+        default: 'boltz_2'
+
+permissions:
+  contents: write     # commit the workflow-id map, and the predictions on collect
+
+concurrency:
+  # two runs at once would submit the same rows twice and pay twice
+  group: rowan
+  cancel-in-progress: false
+
+jobs:
+  rowan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install rowan-python
+
+      - name: fail early if the key is missing
+        env:
+          ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+        run: |
+          if [ -z "$ROWAN_API_KEY" ]; then
+            echo "::error::ROWAN_API_KEY is not set. Run: gh secret set ROWAN_API_KEY"
+            exit 1
+          fi
+          echo "key present (${#ROWAN_API_KEY} chars)"   # length only, never the value
+
+      - name: submit
+        if: inputs.action == 'submit'
+        env:
+          ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+        run: |
+          python scripts/run_rowan_cofold.py --submit \
+            --model "${{ inputs.model }}" \
+            --max-credits "${{ inputs.max_credits }}" \
+            --max-systems "${{ inputs.max_systems }}" \
+            ${{ inputs.draft == true && '--draft' || '' }}
+
+      - name: collect
+        if: inputs.action == 'collect'
+        env:
+          ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+        run: python scripts/run_rowan_cofold.py --collect
+
+      - name: commit workflow ids and any predictions
+        run: |
+          git diff --quiet -- reference/rowan_cofold_workflows.json predictions/ && {
+            echo "nothing to commit"; exit 0; }
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reference/rowan_cofold_workflows.json predictions/ 2>/dev/null || true
+          git commit -m "rowan ${{ inputs.action }}: ${{ inputs.model }}"
+          git push
+          echo "pushed - a predictions change triggers the figures workflow, which redraws"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Rowan ${{ inputs.action }}"
+            echo "- model: \`${{ inputs.model }}\`"
+            echo "- draft: \`${{ inputs.draft }}\` (true = nothing executed, nothing spent)"
+            echo "- caps: ${{ inputs.max_credits }} credits/workflow, ${{ inputs.max_systems }} systems"
+          } >> "$GITHUB_STEP_SUMMARY"
