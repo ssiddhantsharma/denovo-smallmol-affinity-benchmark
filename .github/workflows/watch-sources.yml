@@ -44,7 +44,7 @@ jobs:
           BODY=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
             "Ranked 0-3 by whether the abstract shows a numeric affinity, a named assay and a ligand. A 0 is usually small-molecule *drug* design, which is the opposite direction and not in scope." \
             "$SUMMARY" \
-            "To ingest one: see *Adding a paper* in the README. Extract, verify, dry-run the append, then append. New rows need predictions before they reach the figures, and that step needs a GPU - it is not run here." \
+            "To ingest one: see *Adding a paper* in the README. Extract, verify, dry-run the append, then append. New rows need predictions before they reach the figures: \`scripts/run_rowan_cofold.py\` does that hosted on Rowan, no GPU." \
             "_Opened by \`watch-sources\` on $(date -u +%Y-%m-%d)._")
           EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then

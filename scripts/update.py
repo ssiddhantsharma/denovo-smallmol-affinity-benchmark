@@ -5,12 +5,22 @@ It finds reference rows that no predictions file covers, co-folds them, scores
 them, and leaves the rest to CI -- pushing `predictions/` triggers the figures
 workflow, which re-scores and redraws.
 
-Why this is local and not a GitHub Action: Rowan's scorers need a bound POSE,
-and the pose comes from Protenix or Boltz, which needs a GPU. Rowan itself is
-hosted and would run in CI happily; what it depends on would not. Keeping the
-whole front half here also keeps ROWAN_API_KEY off a public repo's Actions,
-where a secret buys an attack surface in exchange for a step that still could
-not run.
+Two ways to get predictions, and only one of them needs this box:
+
+  scripts/run_rowan_cofold.py   hosted end to end. Rowan folds the complex from
+                                sequence + SMILES and returns Boltz-2's affinity
+                                with it, so no GPU and no local pose. Prefer this.
+  --cofold + --rowan (below)    the local path: co-fold here, then submit the
+                                pose to Rowan's pose-based rescorers (SQM,
+                                GNINA, AEV-PLIG), which take a pose as input and
+                                cannot start from a sequence.
+
+So the GPU is needed for the pose-based rescorers, not for scoring as such. An
+earlier version of this file claimed the GPU step was unavoidable; that was
+wrong, and `rowan.submit_protein_cofolding_workflow` is why.
+
+What stays off a public repo's Actions is the API KEY, not the compute: Rowan
+charges credits, and `--max-credits` caps a workflow rather than a month.
 
 It spends money, so it is dry-run by default and every spending step is capped:
 
@@ -116,9 +126,11 @@ def main() -> int:
     if do_rowan:
         poses_exist = (WORK / "px_out").is_dir() or (WORK / "boltz_out").is_dir()
         if not poses_exist:
-            print(f"\nno poses under {WORK.relative_to(ROOT)}/ -- Rowan scores a POSE, not a "
-                  "sequence. Run with --cofold first (or --all). _work/ is gitignored, so "
-                  "poses do not survive a clean checkout and are regenerated, not fetched.")
+            print(f"\nno poses under {WORK.relative_to(ROOT)}/ -- the pose-based rescorers "
+                  "(SQM/GNINA/AEV-PLIG) take a pose, not a sequence. Run with --cofold first "
+                  "(or --all). _work/ is gitignored, so poses are regenerated, not fetched.\n"
+                  "If you only want affinity columns, scripts/run_rowan_cofold.py folds on "
+                  "Rowan and needs no GPU at all.")
             return 1
         cmd = [sys.executable, str(ROOT / "scripts" / "run_rowan.py"), "--submit",
                "--poses", a.poses]

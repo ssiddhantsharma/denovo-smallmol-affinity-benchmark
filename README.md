@@ -247,30 +247,40 @@ outside 2–13 (the unit-slip guard), and dedups on (sequence, canonical SMILES)
 
 **After appending, the new rows are in no figure.** They have no predictions, so
 `qc_dataset.py` fails its "predictions cover exactly the reference ids" check — that failure
-is the reminder, not a bug. Run the predictors locally on the GPU box (the *Reproduce*
-commands below), which for a few new rows is a minutes-long job; it is the one step that is
-not automated, on purpose.
+is the reminder, not a bug.
 
 **On every PR** touching `reference/` or `predictions/`, `.github/workflows/qc.yml` runs the
 17 integrity checks, with the row-count floor read from the PR's base branch so the set
 cannot silently shrink.
 
-**`scripts/update.py` is the one command for the scoring half**, run on the GPU box:
+**Scoring new rows needs no GPU.** Rowan's co-folding workflow takes a sequence and a
+SMILES, folds the complex server-side and returns Boltz-2's affinity head with it:
 
 ```
-python scripts/update.py                                # what needs scoring; no GPU, no credits
+python scripts/run_rowan_cofold.py                                   # plan, free
+python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-systems 5
+python scripts/run_rowan_cofold.py --collect                         # when they finish
+```
+
+That writes `rowan-cofold-{affinity,pbind,iptm}`. Those are **separate columns from the
+local `boltz-2*` ones and must stay separate** — same model family, different deployment
+and different MSA server, so merging them would put two methods in one column.
+
+The GPU is still needed for one thing: the **pose-based** rescorers (SQM, GNINA, AEV-PLIG)
+take a pose as input and cannot start from a sequence. `scripts/update.py` drives that path
+— co-fold locally, then submit the pose:
+
+```
+python scripts/update.py                                 # what needs scoring; free
 python scripts/update.py --all --max-credits 200 --max-systems 10
 ```
 
-It finds reference rows no predictions file covers, co-folds them, submits to Rowan and
-re-scores. It is dry-run by default, refuses to submit without `--max-credits`, and
-`--max-systems` bounds a session — Rowan's cap is per workflow, so it cannot bound one on
-its own.
+Both are dry-run by default and refuse to submit without `--max-credits`; `--max-systems`
+bounds a session, since Rowan caps per workflow rather than per run.
 
-This half stays local on purpose. Rowan is hosted and would run in CI happily, but its
-scorers need a bound **pose**, and the pose comes from Protenix or Boltz on a GPU. Moving
-the Rowan call into Actions would mean putting a paid API key into a public repo's CI to
-automate a step that still could not run without the GPU output.
+What is kept off a public repo's Actions is the **API key**, not the compute. Rowan charges
+credits, and an unattended workflow holding a paid key is an attack surface bought for
+little — the submission is a one-line local command either way.
 
 **Pushing `predictions/` is what updates the plots.** `.github/workflows/figures.yml`
 re-runs `score.py` and redraws on any push to `main` that touches `predictions/` or
