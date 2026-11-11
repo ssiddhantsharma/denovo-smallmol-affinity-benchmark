@@ -60,6 +60,15 @@ LIGAND_HINT = re.compile(
     r"\b(ligand|small[- ]molecule|cofactor|metabolite|steroid|heme|haem)\b", re.I)
 
 
+TAGS = re.compile(r"<[^>]+>")
+
+
+def clean(text: str) -> str:
+    """Europe PMC returns titles with markup (`<i>De novo</i>`), which would land
+    verbatim in a GitHub issue."""
+    return TAGS.sub("", text or "").replace("  ", " ").strip()
+
+
 def _search(query: str, page_size: int = 50) -> list[dict]:
     url = API + "?" + urllib.parse.urlencode(
         {"query": query, "format": "json", "pageSize": page_size, "resultType": "core"})
@@ -98,7 +107,7 @@ def main(update: bool) -> None:
     for p in fresh:
         r = rank(p)
         doi = p.get("doi") or p.get("id")
-        line = f"[{r}/3] {p.get('firstPublicationDate', '?')[:7]}  {p.get('title', '')[:90]}  {doi}"
+        line = f"[{r}/3] {p.get('firstPublicationDate', '?')[:7]}  {clean(p.get('title', ''))[:90]}  {doi}"
         print("  " + line)
         lines.append(line)
 
