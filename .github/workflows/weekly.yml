@@ -1,0 +1,83 @@
+name: weekly
+
+# The Monday chain: look for new papers, and score anything already ingested.
+#
+# What it does NOT do, deliberately: ingest a paper by itself. Extraction is an
+# LLM reading a PDF, and the one property that makes this benchmark worth
+# citing is that no model has ever written reference/. A wrong row is worse
+# than a missing one, because nobody can tell which rows to distrust. So the
+# chain stops at a reviewable step and a human merges.
+#
+#   1. watch     new papers -> one issue, ranked        (this job, free)
+#   2. YOU       run the add-smallmol-paper skill, open a PR  (qc.yml gates it)
+#   3. score     merged rows with no predictions -> Rowan     (needs the secret)
+#   4. figures   predictions change -> redraw                 (figures.yml)
+#
+# Step 3 runs here only when rows are already merged and unscored, so the spend
+# follows a human merge rather than an LLM's reading of an abstract.
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      score:
+        description: 'also submit unscored rows to Rowan (SPENDS CREDITS)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  watch:
+    uses: ./.github/workflows/watch-sources.yml
+    permissions:
+      contents: write
+      issues: write
+
+  score:
+    # Only when asked, and only if something is actually unscored. A scheduled
+    # run never spends on its own: inputs.score is unset on a schedule, so this
+    # is skipped.
+    needs: watch
+    if: inputs.score == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install rowan-python
+
+      - name: is anything unscored?
+        id: gap
+        run: |
+          python scripts/run_rowan_cofold.py | tee /tmp/plan.txt
+          n=$(grep -oE '[0-9]+ without a rowan-cofold score' /tmp/plan.txt | grep -oE '^[0-9]+')
+          echo "n=${n:-0}" >> "$GITHUB_OUTPUT"
+
+      - name: submit
+        if: steps.gap.outputs.n != '0'
+        env:
+          ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+        run: |
+          if [ -z "$ROWAN_API_KEY" ]; then
+            echo "::error::ROWAN_API_KEY is not set; skipping rather than failing the chain"
+            exit 1
+          fi
+          # conservative caps: a weekly job should never be the thing that
+          # empties the account. Raise them by dispatching rowan.yml directly.
+          python scripts/run_rowan_cofold.py --submit \
+            --max-credits 50 --max-systems 5
+
+      - name: commit workflow ids
+        if: steps.gap.outputs.n != '0'
+        run: |
+          git diff --quiet -- reference/rowan_cofold_workflows.json && exit 0
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reference/rowan_cofold_workflows.json
+          git commit -m "weekly: submitted new rows to Rowan"
+          git push
+          echo "Collect them with: gh workflow run rowan -f action=collect" >> "$GITHUB_STEP_SUMMARY"

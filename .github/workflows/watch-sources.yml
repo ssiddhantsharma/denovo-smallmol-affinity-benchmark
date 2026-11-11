@@ -1,6 +1,7 @@
 name: watch sources
 
-# The cron: 09:00 UTC every Monday. One public API call and a comparison against a
+# The source check itself. weekly.yml runs it on the Monday cron; it is also
+# dispatchable on its own. One public API call and a comparison against a
 # committed watermark, so a run is seconds. This repo is public, and public repos
 # get unlimited free Actions minutes - the schedule costs nothing.
 #
@@ -12,9 +13,10 @@ name: watch sources
 # no repository activity, so if this goes quiet re-enable it in the Actions tab.
 # And scheduled runs are delayed under load - the 120-day lookback window in
 # check_sources.py is sized so a missed week loses nothing.
+# No schedule of its own: weekly.yml owns the Monday cron and calls this. Two
+# schedules would open two issues every week for the same papers.
 on:
-  schedule:
-    - cron: '0 9 * * 1'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

@@ -225,97 +225,56 @@ Every `predictions/*.csv` joins to the reference by `id` and is scored automatic
 ## Growing the set
 
 The benchmark is small because the field is: de-novo designed proteins with a *measured*
-affinity for a small molecule are a few papers a year. Three pieces keep it growing without
-letting anything unchecked in.
+affinity for a small molecule are a few papers a year. The loop that grows it:
 
-**A weekly watcher.** `.github/workflows/watch-sources.yml` runs `scripts/check_sources.py`
-every Monday: one Europe PMC query, compared against a committed watermark, ranked 0-3 by
-whether the abstract shows a numeric affinity, a named assay and a ligand. It opens a single
-issue saying which papers appeared. It is deterministic — no model, no API key — and it
-**cannot add a row**. Public repos get unlimited Actions minutes, so the schedule is free.
+| | what runs | trigger | cost |
+|---|---|---|---|
+| 1 | `weekly.yml` → `check_sources.py` — one Europe PMC query against a committed watermark, ranked 0–3, opens one issue | Monday 09:00 UTC | free |
+| 2 | **you**: `add-smallmol-paper` skill → extract, verify, `append_paper.py`, open a PR | manual | free |
+| 3 | `qc.yml` — 17 integrity checks, row-count floor from the PR base | the PR | free |
+| 4 | `rowan.yml` → `run_rowan_cofold.py` — hosted co-folding, no GPU | dispatch | credits |
+| 5 | `figures.yml` — re-score and redraw | predictions change | free |
 
-The query favours precision. "de novo" AND "small molecule" is dominated by the opposite
-problem — designing a *drug* against a natural protein — and ran at about 2 useful hits in
-23; requiring the designed thing to be the protein gives 5 hits over three years of which 2
-are real. Adding biosensor terms for recall brought back SPR instruments and imprinted
-polymers. So recall is the weak side on purpose: treat the issue as a reading list and keep
-skimming the handful of groups that publish here.
+**Step 2 is deliberately not automated.** Extraction is a model reading a PDF, and the
+property that makes this set worth citing is that no model has ever written `reference/` —
+only `append_paper.py` does. A wrong row is worse than a missing one, because nobody can
+tell which rows to distrust. So the chain stops at a PR and a human merges; the weekly job
+only *scores* rows that a human already merged.
 
-**Adding a paper.** The `add-smallmol-paper` skill runs extract → verify → append:
+**The query favours precision.** `"de novo" AND "small molecule"` is dominated by the
+opposite problem — designing a *drug* against a natural protein — at about 2 useful hits in
+23. Requiring the designed thing to be the protein gives 5 hits over three years of which 2
+are real; adding biosensor terms for recall brought back SPR instruments and imprinted
+polymers. Recall is the weak side on purpose: treat the issue as a reading list.
 
-```
-python scripts/append_paper.py --extract <cleaned>.csv --dry-run   # read the rejections
-python scripts/append_paper.py --extract <cleaned>.csv
-python scripts/qc_dataset.py
-```
+### Scoring
 
-Two agents do the reading (`.claude/agents/`), and neither writes `reference/`. Only
-`append_paper.py` does, and it derives the id, requires a parseable SMILES and a 20-letter
-sequence, refuses a binder with no KD or a non-binder with one, rejects a KD implying pKd
-outside 2–13 (the unit-slip guard), and dedups on (sequence, canonical SMILES).
-
-**After appending, the new rows are in no figure.** They have no predictions, so
-`qc_dataset.py` fails its "predictions cover exactly the reference ids" check — that failure
-is the reminder, not a bug.
-
-**On every PR** touching `reference/` or `predictions/`, `.github/workflows/qc.yml` runs the
-17 integrity checks, with the row-count floor read from the PR's base branch so the set
-cannot silently shrink.
-
-**Scoring new rows needs no GPU.** Rowan's co-folding workflow takes a sequence and a
-SMILES, folds the complex server-side and returns Boltz-2's affinity head with it:
+No GPU needed. Rowan's co-folding takes a sequence and a SMILES, folds server-side and
+returns Boltz-2's affinity head with it:
 
 ```
-python scripts/run_rowan_cofold.py                                   # plan, free
-python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-systems 5
-python scripts/run_rowan_cofold.py --collect                         # when they finish
-```
-
-That writes `rowan-cofold-{affinity,pbind,iptm}`. Those are **separate columns from the
-local `boltz-2*` ones and must stay separate** — same model family, different deployment
-and different MSA server, so merging them would put two methods in one column.
-
-The GPU is still needed for one thing: the **pose-based** rescorers (SQM, GNINA, AEV-PLIG)
-take a pose as input and cannot start from a sequence. `scripts/update.py` drives that path
-— co-fold locally, then submit the pose:
-
-```
-python scripts/update.py                                 # what needs scoring; free
-python scripts/update.py --all --max-credits 200 --max-systems 10
-```
-
-Both are dry-run by default and refuse to submit without `--max-credits`; `--max-systems`
-bounds a session, since Rowan caps per workflow rather than per run.
-
-**Or run it from CI.** `.github/workflows/rowan.yml` does the same thing with the key as a
-repository secret:
-
-```
-gh secret set ROWAN_API_KEY          # once
-gh workflow run rowan                # draft by default: validates, spends nothing
+gh secret set ROWAN_API_KEY                                     # once
+gh workflow run rowan                                           # draft: validates, free
 gh workflow run rowan -f draft=false -f max_systems=2 -f max_credits=50
 gh workflow run rowan -f action=collect
 ```
 
-It is `workflow_dispatch` **only** — no push or schedule trigger, so nothing spends
-unattended, and GitHub restricts manual dispatch to users with write access. Fork pull
-requests never receive repository secrets, and no workflow here uses `pull_request_target`,
-which is the trigger that would hand a fork's code the key. Every run is capped twice
-(`max_credits` per Rowan workflow, `max_systems` for the session) and `draft` defaults to
-true.
+Or locally: `python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-systems 5`.
 
-Collecting commits the predictions, which triggers the figures workflow, which redraws —
-so the loop from "new row" to "updated plot" closes without a local step.
+That writes `rowan-cofold-{affinity,pbind,iptm}`, which are **separate columns from the
+local `boltz-2*` ones and must stay separate** — same model family, different deployment and
+MSA server. The GPU is still needed for the *pose-based* rescorers (SQM, GNINA, AEV-PLIG),
+which take a pose rather than a sequence; `scripts/update.py` drives that path.
 
-The id → Rowan workflow map lives in `reference/rowan_cofold_workflows.json` rather than
-`_work/`, because submit and collect are separate runs on separate runners: scratch state
-would lose the workflow ids, and the credits with them.
+**Key safety.** `rowan.yml` is `workflow_dispatch`-only, so nothing spends unattended, and
+GitHub limits dispatch to write access. Fork pull requests never receive repository secrets,
+and no workflow here uses `pull_request_target`. Every run is capped twice — `max_credits`
+per Rowan workflow, `max_systems` per session — because Rowan's own cap cannot bound a
+session. The weekly job uses the conservative defaults and skips entirely when nothing is
+unscored.
 
-**Pushing `predictions/` is what updates the plots.** `.github/workflows/figures.yml`
-re-runs `score.py` and redraws on any push to `main` that touches `predictions/` or
-`reference/`, and commits the figure — so the README never shows numbers from an older set
-than the CSVs beside it. CI owns the committed figure, with matplotlib pinned, so a local
-redraw on a different OS is not a spurious diff.
+After appending, new rows are in no figure until they are scored: `qc_dataset.py` fails its
+"predictions cover exactly the reference ids" check, which is the reminder, not a bug.
 
 ## Reproduce
 
