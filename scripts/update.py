@@ -42,6 +42,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import methods
+
 ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "reference" / "system_reference.csv"
 PRED = ROOT / "predictions"
@@ -60,6 +62,16 @@ def covered_ids() -> dict[str, set[str]]:
         with path.open() as fh:
             out[path.stem.replace("_predictions", "")] = {r["id"] for r in csv.DictReader(fh)}
     return out
+
+
+def absent(covered: dict[str, set[str]]) -> list[str]:
+    """Registered methods with no predictions file at all.
+
+    These are invisible to `missing()`, which can only compare files that exist.
+    That is how this script once reported "nothing to update" while three
+    rowan-cofold columns had never been produced.
+    """
+    return [m for m in methods.expected() if m not in covered]
 
 
 def missing(ids: list[str], covered: dict[str, set[str]]) -> dict[str, list[str]]:
@@ -90,16 +102,24 @@ def main() -> int:
     ids = reference_ids()
     covered = covered_ids()
     gaps = missing(ids, covered)
+    never_produced = absent(covered)
     never_run = sorted(m for m, g in gaps.items() if len(g) == len(ids))
     partial = {m: g for m, g in gaps.items() if g and len(g) < len(ids)}
     need = sorted({i for g in partial.values() for i in g})
 
     print(f"reference: {len(ids)} systems | predictions files: {len(covered)}")
+    if never_produced:
+        print(f"\nregistered methods with NO predictions file ({len(never_produced)}):")
+        for m in never_produced:
+            flag = "optional" if m in methods.OPTIONAL else "MISSING"
+            print(f"  [{flag}] {m:28s} <- {methods.PRODUCERS[m]}")
     if never_run:
         print(f"methods with no predictions at all ({len(never_run)}): {', '.join(never_run)}")
         print("  these are a full re-run, not an update; this script will not start one")
     if not partial:
-        print("every predictions file covers every reference row -- nothing to update.")
+        print("\nevery predictions file that exists covers every reference row.")
+        if not never_produced:
+            print("nothing to update.")
         return 0
     print(f"\nsystems needing scores: {len(need)}")
     for m, g in sorted(partial.items()):

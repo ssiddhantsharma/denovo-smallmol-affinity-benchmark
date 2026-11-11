@@ -261,3 +261,27 @@ def test_bootstrap_survives_a_degenerate_resample():
     undefined. Those must be dropped, not turned into a NaN interval."""
     lo, hi = bootstrap_ci([1.0, 1.0, 2.0], [1.0, 2.0, 3.0], spearman, n_boot=200)
     assert np.isfinite(lo) and np.isfinite(hi)
+
+
+# --- the method registry ----------------------------------------------------
+# A scorer that was never run, or one added without registering, used to be
+# invisible: update.py compared only the files that existed, so it reported
+# "nothing to update" while three rowan-cofold columns had never been produced.
+
+def test_every_predictions_file_is_registered():
+    spec = importlib.util.spec_from_file_location("methods", ROOT / "scripts/methods.py")
+    methods = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(methods)
+    stems = {p.stem.replace("_predictions", "")
+             for p in (ROOT / "predictions").glob("*_predictions.csv")}
+    unregistered = stems - set(methods.PRODUCERS)
+    assert not unregistered, f"add to scripts/methods.py: {sorted(unregistered)}"
+
+
+def test_registry_names_a_producer_for_every_column():
+    spec = importlib.util.spec_from_file_location("methods", ROOT / "scripts/methods.py")
+    methods = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(methods)
+    assert methods.PRODUCERS, "registry is empty"
+    assert all(v.strip() for v in methods.PRODUCERS.values()), "a column has no producer"
+    assert methods.OPTIONAL <= set(methods.PRODUCERS), "optional names must be registered"

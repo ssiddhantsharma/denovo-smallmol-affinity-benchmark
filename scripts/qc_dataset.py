@@ -122,6 +122,25 @@ def main(min_rows: int) -> int:
     check("every predictions file covers exactly the reference ids", not mismatched,
           "; ".join(mismatched[:3]))
 
+    # The registry is the only place that knows a method SHOULD exist. Without
+    # it a scorer that was never run, or one added without registering, is
+    # invisible here -- the checks above can only compare files that are present.
+    try:
+        import methods
+
+        stems = {p.stem.replace("_predictions", "") for p in pred_files}
+        unregistered = sorted(stems - set(methods.PRODUCERS))
+        check("every predictions file is in the method registry", not unregistered,
+              f"{unregistered} -- add them to scripts/methods.py so tools can see them")
+        required_absent = sorted(set(methods.expected(include_optional=False)) - stems)
+        check("every non-optional registered method has a file", not required_absent,
+              f"{required_absent}")
+        optional_absent = sorted(set(methods.OPTIONAL) - stems)
+        if optional_absent:
+            print(f"  (optional methods not yet produced: {', '.join(optional_absent)})")
+    except ImportError:
+        print("  (scripts/methods.py not importable: registry checks skipped)")
+
     # rdkit is an optional dependency locally but installed in CI, so a missing
     # import downgrades this check rather than failing the run
     try:
