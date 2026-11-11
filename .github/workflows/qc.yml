@@ -1,0 +1,50 @@
+name: qc
+
+# Runs on any PR that touches the dataset or the predictions. The benchmark's
+# value is that its numbers can be trusted, and the cheapest way to lose that is
+# a row that half-lands: present in one reference file and not the other, a pKd
+# on a declared non-binder, a predictions file covering a different id set than
+# the rest.
+#
+# PR-only on purpose. The row-count floor is read from the PR's base branch, so
+# the check is "this change does not shrink the set" rather than a number someone
+# has to remember to bump.
+on:
+  pull_request:
+    paths:
+      - 'reference/**'
+      - 'predictions/**'
+      - 'scripts/qc_dataset.py'
+  workflow_dispatch:
+
+jobs:
+  qc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install rdkit
+
+      - name: row count on the base branch
+        id: base
+        run: |
+          git show "origin/${{ github.base_ref }}:reference/system_reference.csv" > /tmp/base.csv 2>/dev/null || {
+            echo "n=0" >> "$GITHUB_OUTPUT"; exit 0; }
+          echo "n=$(($(wc -l < /tmp/base.csv) - 1))" >> "$GITHUB_OUTPUT"
+
+      - name: qc
+        run: python scripts/qc_dataset.py --min-rows ${{ steps.base.outputs.n }}
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Dataset QC"
+            echo "floor from \`${{ github.base_ref }}\`: ${{ steps.base.outputs.n }} rows"
+          } >> "$GITHUB_STEP_SUMMARY"

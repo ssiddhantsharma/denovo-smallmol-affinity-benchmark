@@ -203,9 +203,54 @@ scores all 60.
 reference/experimental_reference_ground_truth.csv   id, is_binder, experimental_pKD
 reference/system_reference.csv                       id, protein, ligand_name, sequence, smiles, source, source_url
 predictions/<method>_predictions.csv                 method, id, predicted_affinity
+reference/source_watermarks.json                     what the weekly watcher has already seen
+scripts/qc_dataset.py                                17 integrity checks, run on every PR
+scripts/check_sources.py                             the watcher: one Europe PMC query, no model
+scripts/append_paper.py                              the only thing that writes reference/
+.claude/agents, .claude/skills                       the extract/verify agents and the skill
 ```
 
 Every `predictions/*.csv` joins to the reference by `id` and is scored automatically.
+
+## Growing the set
+
+The benchmark is small because the field is: de-novo designed proteins with a *measured*
+affinity for a small molecule are a few papers a year. Three pieces keep it growing without
+letting anything unchecked in.
+
+**A weekly watcher.** `.github/workflows/watch-sources.yml` runs `scripts/check_sources.py`
+every Monday: one Europe PMC query, compared against a committed watermark, ranked 0-3 by
+whether the abstract shows a numeric affinity, a named assay and a ligand. It opens a single
+issue saying which papers appeared. It is deterministic — no model, no API key — and it
+**cannot add a row**. Public repos get unlimited Actions minutes, so the schedule is free.
+
+The query favours precision. "de novo" AND "small molecule" is dominated by the opposite
+problem — designing a *drug* against a natural protein — and ran at about 2 useful hits in
+23; requiring the designed thing to be the protein gives 5 hits over three years of which 2
+are real. Adding biosensor terms for recall brought back SPR instruments and imprinted
+polymers. So recall is the weak side on purpose: treat the issue as a reading list and keep
+skimming the handful of groups that publish here.
+
+**Adding a paper.** The `add-smallmol-paper` skill runs extract → verify → append:
+
+```
+python scripts/append_paper.py --extract <cleaned>.csv --dry-run   # read the rejections
+python scripts/append_paper.py --extract <cleaned>.csv
+python scripts/qc_dataset.py
+```
+
+Two agents do the reading (`.claude/agents/`), and neither writes `reference/`. Only
+`append_paper.py` does, and it derives the id, requires a parseable SMILES and a 20-letter
+sequence, refuses a binder with no KD or a non-binder with one, rejects a KD implying pKd
+outside 2–13 (the unit-slip guard), and dedups on (sequence, canonical SMILES).
+
+**After appending, the new rows are in no figure.** They have no predictions, so
+`qc_dataset.py` fails its "predictions cover exactly the reference ids" check — that failure
+is the reminder, not a bug. Running the predictors needs a GPU and is the only paid step.
+
+**On every PR** touching `reference/` or `predictions/`, `.github/workflows/qc.yml` runs the
+17 integrity checks, with the row-count floor read from the PR's base branch so the set
+cannot silently shrink.
 
 ## Reproduce
 

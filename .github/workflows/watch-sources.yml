@@ -1,0 +1,75 @@
+name: watch sources
+
+# The cron: 09:00 UTC every Monday. One public API call and a comparison against a
+# committed watermark, so a run is seconds. This repo is public, and public repos
+# get unlimited free Actions minutes - the schedule costs nothing.
+#
+# It is deterministic: no LLM, no API key, no extraction. It CANNOT add a row to
+# the benchmark. It opens one issue saying "these papers appeared, go look", and
+# ingestion stays a human decision made through scripts/append_paper.py.
+#
+# Two caveats worth knowing. GitHub disables scheduled workflows after 60 days with
+# no repository activity, so if this goes quiet re-enable it in the Actions tab.
+# And scheduled runs are delayed under load - the 120-day lookback window in
+# check_sources.py is sized so a missed week loses nothing.
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write     # commit the watermark
+  issues: write       # open the "go look" issue
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: check sources
+        id: check
+        run: python scripts/check_sources.py --update
+
+      - name: open or update the issue
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUMMARY: ${{ steps.check.outputs.summary }}
+        run: |
+          TITLE="Possible new de-novo small-molecule binder papers"
+          BODY=$(printf '%s\n\n%s\n\n%s\n\n%s\n' \
+            "Ranked 0-3 by whether the abstract shows a numeric affinity, a named assay and a ligand. A 0 is usually small-molecule *drug* design, which is the opposite direction and not in scope." \
+            "$SUMMARY" \
+            "To ingest one: see *Adding a paper* in the README. Extract, verify, dry-run the append, then append. New rows need predictions before they reach the figures, and that step needs a GPU - it is not run here." \
+            "_Opened by \`watch-sources\` on $(date -u +%Y-%m-%d)._")
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
+      - name: commit the watermark
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          git diff --quiet -- reference/source_watermarks.json && exit 0
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reference/source_watermarks.json
+          git commit -m "watch-sources: update watermark"
+          git push
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Source watch"
+            echo "changed: ${{ steps.check.outputs.changed }}"
+            echo '```'
+            echo "${{ steps.check.outputs.summary }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
