@@ -10,7 +10,10 @@ Joins reference/experimental_reference_ground_truth.csv with every predictions/*
 import argparse
 import contextlib
 import csv
+import math
 from pathlib import Path
+
+import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 LOWER_BETTER = {"protenix-gpde", "boltz-2-pae-min", "boltz-2-pae-mean",
@@ -43,15 +46,44 @@ def load():
 
 
 def _rank(v):
-    o = sorted(range(len(v)), key=lambda i: v[i]); r = [0] * len(v)
-    for i, k in enumerate(o):
-        r[k] = i
-    return r
+    """Midranks: tied values share the average of the ranks they span.
+
+    The obvious version -- sort, then number 0..n-1 -- breaks ties by original
+    row order, which invents an ordering the data does not have. On this set
+    that was not academic: `interface-ligburial` has 42 tied values in 60 and
+    `clogp` is constant within a ligand by construction, so the old ranking
+    reported a perfect correlation (rho +1.00 where scipy gives +0.77) for
+    vectors that carry almost no ordering at all.
+    """
+    a = np.asarray(v, dtype=float)
+    order = np.argsort(a, kind="mergesort")       # stable, so ties group together
+    ranks = np.empty(len(a), dtype=float)
+    ranks[order] = np.arange(len(a), dtype=float)
+    # average the ranks within each run of equal values
+    sa = a[order]
+    i = 0
+    while i < len(sa):
+        j = i + 1
+        while j < len(sa) and sa[j] == sa[i]:
+            j += 1
+        if j - i > 1:
+            ranks[order[i:j]] = (i + j - 1) / 2.0
+        i = j
+    return ranks
 
 
 def spearman(xs, ys):
-    rx, ry = _rank(xs), _rank(ys); n = len(xs)
-    return 1 - 6 * sum((a - b) ** 2 for a, b in zip(rx, ry, strict=True)) / (n * (n * n - 1))
+    """Pearson correlation of the midranks.
+
+    NOT the 1 - 6*sum(d^2)/(n(n^2-1)) shortcut, which is only valid when no
+    value is tied. With ties it overstates the correlation, which is how the
+    bug above went unnoticed: the formula still returns a plausible number.
+    """
+    rx, ry = _rank(xs), _rank(ys)
+    rx = rx - rx.mean()
+    ry = ry - ry.mean()
+    d = math.sqrt(float(rx @ rx) * float(ry @ ry))
+    return float(rx @ ry) / d if d else float("nan")
 
 
 def pearson(xs, ys):
@@ -66,24 +98,107 @@ def rmse(xs, ys):
 
 
 def auroc(scores, labels):
-    """P(score(pos) > score(neg)); labels 1=positive. Ties count 0.5."""
-    pos = [s for s, l in zip(scores, labels, strict=True) if l == 1]
-    neg = [s for s, l in zip(scores, labels, strict=True) if l == 0]
-    if not pos or not neg:
+    """P(score(pos) > score(neg)); labels 1=positive. Ties count 0.5.
+
+    Rank form of the Mann-Whitney statistic: O(n log n) instead of the O(P*N)
+    double loop it replaces, and identical to it because the midranks already
+    give ties their half-credit. On this set that is 49x11 pair comparisons per
+    bootstrap resample, which is where the runtime was going.
+    """
+    s = np.asarray(scores, dtype=float)
+    y = np.asarray(labels)
+    npos = int((y == 1).sum())
+    nneg = int((y == 0).sum())
+    if not npos or not nneg:
         return None
-    wins = sum((p > n) + 0.5 * (p == n) for p in pos for n in neg)
-    return wins / (len(pos) * len(neg))
+    r = _rank(s) + 1.0                              # _rank is 0-based
+    return float((r[y == 1].sum() - npos * (npos + 1) / 2.0) / (npos * nneg))
+
+
+def _midranks_2d(a):
+    """Midranks along axis 1 for a (B, n) array, vectorised over all B rows.
+
+    Same convention as _rank, but without a Python loop per row: the whole
+    bootstrap is ranked in one pass. Tie runs are found by comparing each sorted
+    value to its neighbour and taking a running max of run starts forwards and a
+    running min of run ends backwards, which gives every element the average of
+    the positions its run spans.
+    """
+    b, n = a.shape
+    order = np.argsort(a, axis=1, kind="stable")
+    srt = np.take_along_axis(a, order, axis=1)
+    pos = np.broadcast_to(np.arange(n, dtype=float), (b, n))
+
+    new_run = np.ones((b, n), dtype=bool)
+    new_run[:, 1:] = srt[:, 1:] != srt[:, :-1]
+    start = np.maximum.accumulate(np.where(new_run, pos, -np.inf), axis=1)
+    end_marker = np.ones((b, n), dtype=bool)
+    end_marker[:, :-1] = srt[:, :-1] != srt[:, 1:]
+    end = np.minimum.accumulate(np.where(end_marker, pos, np.inf)[:, ::-1], axis=1)[:, ::-1]
+
+    srt_ranks = (start + end) / 2.0
+    ranks = np.empty_like(srt_ranks)
+    np.put_along_axis(ranks, order, srt_ranks, axis=1)
+    return ranks
+
+
+def batch_spearman(x_boot, y_boot):
+    """Spearman for every row pair of two (B, n) arrays, in one pass."""
+    rx = _midranks_2d(x_boot)
+    ry = _midranks_2d(y_boot)
+    rx = rx - rx.mean(axis=1, keepdims=True)
+    ry = ry - ry.mean(axis=1, keepdims=True)
+    num = (rx * ry).sum(axis=1)
+    den = np.sqrt((rx * rx).sum(axis=1) * (ry * ry).sum(axis=1))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(den > 0, num / den, np.nan)
+
+
+def batch_auroc(s_boot, y_boot):
+    """AUROC for every row pair of a (B, n) score array and label array."""
+    r = _midranks_2d(s_boot) + 1.0
+    pos = y_boot == 1
+    npos = pos.sum(axis=1).astype(float)
+    nneg = (y_boot == 0).sum(axis=1).astype(float)
+    rsum = np.where(pos, r, 0.0).sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out = (rsum - npos * (npos + 1) / 2.0) / (npos * nneg)
+    return np.where((npos > 0) & (nneg > 0), out, np.nan)
+
+
+# stat -> its batched twin. bootstrap_ci uses these when it can, which turns
+# 2000 Python calls per metric into one vectorised pass.
+_BATCHED = {}
 
 
 def bootstrap_ci(xs, ys, stat, n_boot=2000, seed=0):
-    import random
-    rng = random.Random(seed); n = len(xs); out = []
-    for _ in range(n_boot):
-        idx = [rng.randrange(n) for _ in range(n)]
-        with contextlib.suppress(ZeroDivisionError, ValueError):
-            out.append(stat([xs[i] for i in idx], [ys[i] for i in idx]))
-    out.sort()
-    return out[int(0.025 * len(out))], out[int(0.975 * len(out))]
+    """Percentile CI over n_boot resamples.
+
+    All resample indices are drawn in one numpy call rather than n_boot*n
+    separate `random.randrange` calls, which was 5.9 million of them per run and
+    most of the script's runtime. `stat` is still called per resample because
+    the callers pass different statistics; the draw is what was expensive.
+    """
+    x = np.asarray(xs, dtype=float)
+    y = np.asarray(ys, dtype=float)
+    n = len(x)
+    idx = np.random.default_rng(seed).integers(0, n, size=(n_boot, n))
+    batched = _BATCHED.get(stat)
+    if batched is not None:
+        vals = batched(x[idx], y[idx])
+        out = np.sort(vals[np.isfinite(vals)])
+    else:
+        acc = []
+        for row in idx:
+            with contextlib.suppress(ZeroDivisionError, ValueError):
+                acc.append(stat(x[row], y[row]))
+        out = np.sort(np.asarray([v for v in acc if v is not None and np.isfinite(v)]))
+    if not len(out):
+        return float("nan"), float("nan")
+    return float(out[int(0.025 * len(out))]), float(out[int(0.975 * len(out))])
+
+
+_BATCHED.update({spearman: batch_spearman, auroc: batch_auroc})
 
 
 def regression(rows, methods):

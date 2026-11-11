@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -174,3 +176,88 @@ def test_ipdae_refuses_empty_and_mismatched_input():
     assert m.ipdae_from_block(np.zeros((2, 2)), np.zeros((2, 2), dtype=bool)) == (None, None)
     with pytest.raises(ValueError):
         m.ipdae_from_block(np.zeros((2, 3)), np.ones((2, 2), dtype=bool))
+
+
+# --- rank statistics: the tie bug, and the guards against it coming back -----
+# The original _rank numbered a sort 0..n-1, which breaks ties by row order and
+# invents an ordering the data does not have. With 42 tied values in 60,
+# interface-ligburial's within-ligand rho was reported as +0.10 when the correct
+# value is +0.32. These tests exist so that cannot recur silently.
+
+import numpy as np  # noqa: E402
+
+# score.py is loaded by path above, not importable as a module; reuse that object
+_rank, spearman, auroc = score._rank, score.spearman, score.auroc
+batch_spearman, batch_auroc = score.batch_spearman, score.batch_auroc
+bootstrap_ci = score.bootstrap_ci
+
+
+def test_rank_gives_tied_values_the_same_midrank():
+    r = _rank([1.0, 1.0, 1.0, 2.0])
+    assert list(r) == [1.0, 1.0, 1.0, 3.0], "tied values must share the average of their ranks"
+
+
+def test_spearman_matches_scipy_on_heavily_tied_input():
+    scipy_stats = pytest.importorskip("scipy.stats")
+    rng = np.random.default_rng(0)
+    worst = 0.0
+    for _ in range(200):
+        n = int(rng.integers(5, 60))
+        x = rng.integers(0, 5, n).astype(float)      # deliberately tie-dense
+        y = rng.normal(size=n)
+        worst = max(worst, abs(spearman(x, y) - scipy_stats.spearmanr(x, y).statistic))
+    assert worst < 1e-12, f"max deviation from scipy {worst:.2e}"
+
+
+def test_spearman_does_not_claim_perfect_correlation_on_a_constant_vector():
+    """A ligand-only score is constant within a ligand by construction. The old
+    ranking returned +1.00 for this; the honest answer is no correlation."""
+    rho = spearman([3.0, 3.0, 3.0, 3.0], [1.0, 2.0, 3.0, 4.0])
+    assert np.isnan(rho), f"a constant predictor cannot correlate, got {rho}"
+
+
+def test_auroc_matches_sklearn_including_ties():
+    skm = pytest.importorskip("sklearn.metrics")
+    rng = np.random.default_rng(1)
+    worst = 0.0
+    for _ in range(200):
+        n = int(rng.integers(6, 60))
+        s = rng.integers(0, 4, n).astype(float)
+        y = rng.integers(0, 2, n)
+        if not 0 < y.sum() < n:
+            continue
+        worst = max(worst, abs(auroc(s, y) - skm.roc_auc_score(y, s)))
+    assert worst < 1e-12, f"max deviation from sklearn {worst:.2e}"
+
+
+def test_batched_statistics_equal_the_scalar_ones():
+    """The bootstrap uses the batched forms; if they ever drift from the scalar
+    versions the CIs stop describing the point estimate above them."""
+    rng = np.random.default_rng(2)
+    x = rng.integers(0, 4, (64, 25)).astype(float)
+    y = rng.normal(size=(64, 25))
+    assert np.allclose(batch_spearman(x, y),
+                       [spearman(x[i], y[i]) for i in range(64)], equal_nan=True)
+    lab = rng.integers(0, 2, (64, 25))
+    keep = [i for i in range(64) if 0 < lab[i].sum() < 25]
+    assert np.allclose(batch_auroc(x, lab)[keep],
+                       [auroc(x[i], lab[i]) for i in keep])
+
+
+def test_bootstrap_is_deterministic_and_brackets_the_estimate():
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=40)
+    y = x * 0.8 + rng.normal(size=40) * 0.4
+    a = bootstrap_ci(x, y, spearman)
+    b = bootstrap_ci(x, y, spearman)
+    assert a == b, "same seed must give the same interval"
+    lo, hi = a
+    assert lo < spearman(x, y) < hi
+    assert lo > 0, "a strong positive correlation should have an interval clear of zero"
+
+
+def test_bootstrap_survives_a_degenerate_resample():
+    """Some resamples of a tiny vector are all-identical, so the statistic is
+    undefined. Those must be dropped, not turned into a NaN interval."""
+    lo, hi = bootstrap_ci([1.0, 1.0, 2.0], [1.0, 2.0, 3.0], spearman, n_boot=200)
+    assert np.isfinite(lo) and np.isfinite(hi)

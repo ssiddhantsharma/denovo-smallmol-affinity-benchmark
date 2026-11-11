@@ -46,8 +46,9 @@ transparency.
   the interface-confidence metrics lead: Boltz-2 / Protenix ipTM 0.85 to 0.91, Protenix pLDDT-ligand
   0.86, pTM 0.79. cLogP, dtSFM, and the physics/ML rescorers are near chance. A pure-geometry pose
   baseline, ligand burial (`interface-ligburial`, fraction of the ligand within 4.5 A of the protein),
-  reaches 0.71, above cLogP, but carries no affinity-ranking signal (within-ligand rho ~0): the real
-  ligand is more buried, yet burial does not order KD.
+  reaches 0.71, above cLogP, but carries no affinity-ranking signal that survives its interval
+  (within-ligand rho +0.32 over only 3 ligands, CI [-0.62, +0.71]): the real ligand is more buried,
+  yet burial does not demonstrably order KD.
 - **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
   dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at chance on de
   novo (AUROC 0.53, within-ligand +0.10), yet its featurization validates on in-distribution natural
@@ -57,6 +58,14 @@ transparency.
 |---|---|---|---|
 | rank pKd, within-ligand (median Spearman) | +0.70 | n/a (constant per ligand) | not defined |
 | tell right from wrong ligand (AUROC) | 0.91 | 0.53 | 0.84 |
+
+> **Corrected 2026-11-11.** The rank statistics broke ties by row order, which the
+> `1 - 6*sum(d^2)/(n(n^2-1))` Spearman shortcut is not valid for. Five metrics carry ties
+> (`interface-ligburial` 42 of 60, `interface-ncontacts`, `clogp`, `molecular-weight`,
+> `rowan-aevplig`), so their numbers were wrong — most visibly `interface-ligburial`'s
+> within-ligand rho, reported as +0.10 and actually **+0.32**. Ranks are midranks now and
+> Spearman is Pearson-on-ranks, matching scipy to 1e-16 on tie-dense input. Nine of 68
+> point estimates moved; no conclusion in this README changed.
 
 ## Caveats
 
