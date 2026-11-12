@@ -445,3 +445,62 @@ def test_count_flag_prints_a_bare_integer():
                          capture_output=True, text=True)
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip().isdigit(), out.stdout
+
+
+# --- unattended ingest -------------------------------------------------------
+# The model-written path. These guard the parts that decide whether a fabricated
+# row can reach reference/: the prompt actually binding the call, and the parser
+# refusing to invent rows out of prose.
+
+def _ingest():
+    return _load("scripts/ingest_paper.py", "ingest_paper")
+
+
+def test_ingest_uses_the_real_agent_prompts():
+    """The extraction rules live in .claude/agents/ and are read at runtime, not
+    copied. A copy would drift the first time one was edited, silently, with
+    both paths still running."""
+    ing = _ingest()
+    for name in ("smallmol-extractor", "smallmol-verifier"):
+        body = ing.agent_prompt(name)
+        assert len(body) > 500
+        assert not body.startswith("---"), "frontmatter leaked into the prompt"
+    assert "NEVER invent" in ing.agent_prompt("smallmol-extractor")
+
+
+@pytest.mark.parametrize("reply", [
+    "",
+    "This paper is out of scope: the designed molecule is the drug.",
+    "protein,ligand_name,sequence,smiles,kd_nM,is_binder,source,source_url,notes",
+    "I could not access the supplementary information, so I extracted nothing.",
+])
+def test_parse_csv_invents_nothing(reply):
+    """Zero rows is the correct result for a closed-access paper, and by far the
+    commonest one. It must never become a half-parsed row."""
+    assert _ingest().parse_csv(reply) == []
+
+
+def test_parse_csv_extracts_a_fenced_table_with_prose_around_it():
+    reply = ("Here is what I found.\n\n```csv\n"
+             "protein,ligand_name,sequence,smiles,kd_nM,is_binder,source,source_url,notes\n"
+             "NTF2_d1,cortisol,MSGT,CC12CCC,120,1,Lee2026,https://x,from SI\n"
+             "```\nTwo pairs were dropped.")
+    rows = _ingest().parse_csv(reply)
+    assert len(rows) == 1
+    assert rows[0]["protein"] == "NTF2_d1" and rows[0]["kd_nM"] == "120"
+
+
+def test_ingest_columns_match_what_append_paper_reads():
+    """append_paper.py is the only writer; a column renamed on one side and not
+    the other would drop a field silently rather than error."""
+    expected = {"protein", "ligand_name", "sequence", "smiles", "kd_nM",
+                "is_binder", "source", "source_url", "notes"}
+    assert set(_ingest().COLS) == expected
+
+
+def test_no_workflow_uses_pull_request_target():
+    """The one trigger that would hand a fork's code the API keys."""
+    for wf in (ROOT / ".github/workflows").glob("*.yml"):
+        body = "\n".join(ln for ln in wf.read_text().splitlines()
+                         if not ln.lstrip().startswith("#"))
+        assert "pull_request_target" not in body, wf.name

@@ -8,22 +8,43 @@ name: weekly
 # than a missing one, because nobody can tell which rows to distrust. So the
 # chain stops at a reviewable step and a human merges.
 #
-#   1. watch     new papers -> one issue, ranked        (this job, free)
-#   2. YOU       run the add-smallmol-paper skill, open a PR  (qc.yml gates it)
-#   3. score     merged rows with no predictions -> Rowan     (needs the secret)
-#   4. figures   predictions change -> redraw                 (figures.yml)
+#   1. watch     new papers -> one ranked issue              (free)
+#   2. ingest    extract + verify -> a PR, never a push       (ingest.yml, needs a key)
+#   3. YOU       review and merge that PR                     (qc.yml gates it)
+#   4. score     collect last week's results, submit new rows (needs the secret)
+#   5. figures   predictions change -> redraw                 (figures.yml)
 #
-# Step 3 runs here only when rows are already merged and unscored, so the spend
-# follows a human merge rather than an LLM's reading of an abstract.
+# Step 4 runs on the schedule. It spends, bounded by max_systems here and by
+# BUDGET_CREDITS in the script, which is a ceiling on cumulative charge and the
+# only thing that bounds repeated runs. Dispatch with score=false to skip it.
+#
+# Collect comes BEFORE submit on purpose: a Rowan workflow finishes server-side
+# minutes to hours after submission, so the run that submits cannot also collect.
+# Last week's results are what today's collect turns into predictions, and that
+# push is what triggers figures.yml. Without it the loop submits forever and
+# never produces a number.
 on:
   schedule:
     - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
-      score:
-        description: 'also submit unscored rows to Rowan (SPENDS CREDITS)'
+      # Only when the watcher found something that looks in scope. Opens a PR; it
+  # cannot reach main on its own. Skipped silently if ANTHROPIC_API_KEY is unset.
+  ingest:
+    needs: watch
+    if: needs.watch.outputs.top_doi != ''
+    uses: ./.github/workflows/ingest.yml
+    with:
+      doi: ${{ needs.watch.outputs.top_doi }}
+    secrets: inherit
+    permissions:
+      contents: write
+      pull-requests: write
+
+  score:
+        description: 'collect finished runs and submit new ones (SPENDS CREDITS)'
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -37,11 +58,11 @@ jobs:
       issues: write
 
   score:
-    # Only when asked, and only if something is actually unscored. A scheduled
-    # run never spends on its own: inputs.score is unset on a schedule, so this
-    # is skipped.
+    # Runs on the schedule. `inputs.score` is unset on a cron, so the test is
+    # written to treat "not explicitly false" as yes -- `== true` would have
+    # excluded the schedule, which is how this job sat dormant before.
     needs: watch
-    if: inputs.score == true
+    if: inputs.score != false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +70,13 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install rowan-python
+
+      # Picks up whatever last week submitted and writes the prediction CSVs.
+      # Safe when nothing is outstanding: it writes no file and commits nothing.
+      - name: collect finished runs
+        env:
+          ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+        run: python scripts/run_rowan_cofold.py --collect
 
       - name: is anything unscored?
         id: gap
@@ -79,13 +107,15 @@ jobs:
           python scripts/run_rowan_cofold.py --submit \
             --max-credits 50 --max-systems 5
 
-      - name: commit workflow ids
-        if: steps.gap.outputs.n != '0'
+      # predictions/ too: the collect above may have written new columns, and
+      # pushing them is what triggers figures.yml to redraw. Not gated on the
+      # gap -- a run that submits nothing can still have collected something.
+      - name: commit ids and any predictions
         run: |
-          git diff --quiet -- reference/rowan_cofold_workflows.json && exit 0
+          git diff --quiet -- reference/rowan_cofold_workflows.json predictions/ && {
+            echo "nothing collected or submitted"; exit 0; }
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reference/rowan_cofold_workflows.json
-          git commit -m "weekly: submitted new rows to Rowan"
+          git add reference/rowan_cofold_workflows.json predictions/
+          git commit -m "weekly: collect finished runs, submit new ones"
           git push
-          echo "Collect them with: gh workflow run rowan -f action=collect" >> "$GITHUB_STEP_SUMMARY"

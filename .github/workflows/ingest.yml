@@ -1,0 +1,122 @@
+name: ingest
+
+# Extract one paper and open a PULL REQUEST with the rows.
+#
+# The integrity property this preserves: no model output reaches main without a
+# person merging it. This job cannot push to main -- it pushes a branch and
+# opens a PR, qc.yml runs its 21 checks on that PR, and you merge. The model
+# writes a candidate CSV; `append_paper.py` is still the only thing that writes
+# reference/, and it rejects malformed rows, unit slips and duplicates whoever
+# produced them.
+#
+# Expect many runs to find nothing. Europe PMC serves open-access full text, and
+# most of this field's sequences sit in a PDF supplement behind a paywall, so a
+# closed paper correctly yields zero rows. That is the designed behaviour: a
+# missing row is recoverable, a wrong one is not.
+on:
+  workflow_call:
+    inputs:
+      doi:
+        type: string
+        required: true
+    secrets:
+      ANTHROPIC_API_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      doi:
+        description: 'DOI to ingest, e.g. 10.1038/s41586-025-xxxxx'
+        type: string
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # two ingests at once would race on the branch name and the row count
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install anthropic rdkit
+
+      - name: skip cleanly without a key
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY not set; ingest is not configured. \
+            Run: gh secret set ANTHROPIC_API_KEY"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: extract and verify
+        if: steps.key.outputs.ok == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DOI: ${{ inputs.doi }}
+        run: python scripts/ingest_paper.py --doi "$DOI" --out /tmp/candidate.csv
+
+      - name: dry-run the append
+        if: steps.key.outputs.ok == 'true'
+        id: dry
+        run: |
+          rows=$(($(wc -l < /tmp/candidate.csv) - 1))
+          echo "rows=$rows" >> "$GITHUB_OUTPUT"
+          [ "$rows" -gt 0 ] || { echo "nothing extracted; no PR"; exit 0; }
+          python scripts/append_paper.py --extract /tmp/candidate.csv --dry-run
+
+      - name: append and open a PR
+        if: steps.key.outputs.ok == 'true' && steps.dry.outputs.rows != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOI: ${{ inputs.doi }}
+          ROWS: ${{ steps.dry.outputs.rows }}
+        run: |
+          python scripts/append_paper.py --extract /tmp/candidate.csv
+          git diff --quiet -- reference/ && { echo "all rows already present"; exit 0; }
+          branch="ingest/$(date +%Y%m%d)-$(echo "$DOI" | tr '/.' '--')"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add reference/
+          git commit -m "Ingest $DOI"
+          git push -u origin "$branch"
+          gh pr create --title "Ingest $DOI" --body "$(cat <<EOF
+          Extracted by \`scripts/ingest_paper.py\` from Europe PMC text, then
+          adversarially verified, using the prompts in \`.claude/agents/\`.
+          **$ROWS row(s)** survived verification.
+
+          A model produced these rows, so read them before merging. Worth checking:
+
+          - the **sequence** is the designed protein's own, not a lookalike from a PDB entry
+          - the **SMILES** is the exact ligand measured
+          - the **KD unit** converted to nM correctly (a 1000x slip can stay inside the valid range)
+          - a reported **bound** ("KD < 1 µM") was not recorded as a KD
+
+          \`qc\` runs the integrity checks on this PR. New rows are in no figure
+          until they are scored.
+          EOF
+          )"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### Ingest ${{ inputs.doi }}"
+            echo "- key configured: \`${{ steps.key.outputs.ok }}\`"
+            echo "- rows after verification: \`${{ steps.dry.outputs.rows || 'n/a' }}\`"
+            echo ""
+            echo "Zero rows is the expected result for a closed-access paper."
+          } >> "$GITHUB_STEP_SUMMARY"

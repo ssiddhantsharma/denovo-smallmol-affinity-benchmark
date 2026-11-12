@@ -17,6 +17,10 @@ name: watch sources
 # schedules would open two issues every week for the same papers.
 on:
   workflow_call:
+    outputs:
+      top_doi:
+        description: 'best new candidate (rank >= 2), or empty; what ingest chains to'
+        value: ${{ jobs.watch.outputs.top_doi }}
   workflow_dispatch:
 
 permissions:
@@ -26,6 +30,8 @@ permissions:
 jobs:
   watch:
     runs-on: ubuntu-latest
+    outputs:
+      top_doi: ${{ steps.check.outputs.top_doi }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

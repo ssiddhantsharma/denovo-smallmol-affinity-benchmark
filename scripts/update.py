@@ -96,6 +96,10 @@ def main() -> int:
     ap.add_argument("--max-systems", type=int, default=None,
                     help="refuse to start if more than this many systems need scoring")
     ap.add_argument("--poses", default="protenix", choices=("protenix", "boltz"))
+    ap.add_argument("--count", action="store_true",
+                    help="print only how many systems need scoring, for cron. Parsing "
+                         "the prose output is how the weekly job silently stopped "
+                         "submitting when a column was renamed.")
     a = ap.parse_args()
     do_cofold, do_rowan = a.cofold or a.all, a.rowan or a.all
 
@@ -107,6 +111,9 @@ def main() -> int:
     partial = {m: g for m, g in gaps.items() if g and len(g) < len(ids)}
     need = sorted({i for g in partial.values() for i in g})
 
+    if a.count:
+        print(len(need))
+        return 0
     print(f"reference: {len(ids)} systems | predictions files: {len(covered)}")
     if never_produced:
         print(f"\nregistered methods with NO predictions file ({len(never_produced)}):")

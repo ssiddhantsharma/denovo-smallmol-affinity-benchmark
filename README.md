@@ -24,7 +24,7 @@ one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affini
 ![benchmark](figures/benchmark.png)
 
 <!-- figure-stamp -->
-*Figure regenerated **2026-11-12 07:29 UTC** from 60 systems, 25 methods drawn, commit `a4addb8`.*
+*Figure regenerated **2026-11-12 07:39 UTC** from 60 systems, 25 methods drawn.*
 <br>*Not drawn (no AUROC until both classes are scored): `rowan-boltz-2-affinity`, `rowan-boltz-2-iptm`, `rowan-boltz-2-pbind`.*
 <!-- /figure-stamp -->
 
@@ -227,6 +227,8 @@ scripts/check_sources.py                             the watcher: one Europe PMC
 scripts/append_paper.py                              the only thing that writes reference/
 scripts/run_rowan.py                                 pose-based rescoring (SQM/GNINA/AEV-PLIG)
 scripts/run_rowan_cofold.py                          hosted co-folding, no GPU, budget ledger
+scripts/ingest_paper.py                              unattended extract+verify -> a PR, never main
+scripts/gpu_autoscore.sh                             cron for the GPU box (pull-based, not a runner)
 scripts/update.py                                    the GPU+Rowan half, dry-run by default
 .claude/agents, .claude/skills                       the extract/verify agents and the skill
 ```
@@ -240,23 +242,36 @@ affinity for a small molecule are a few papers a year. The loop that grows it:
 
 | | step | who | cost |
 |---|---|---|---|
-| 1 | `weekly` queries Europe PMC against a committed watermark and opens one ranked issue | automatic, Monday | free |
-| 2 | extract, verify, `append_paper.py`, open a PR | **you** (`add-smallmol-paper` skill) | free |
-| 3 | `qc` runs 21 checks on the PR; merge | automatic, **you** merge | free |
-| 4 | score the new rows: 3 hosted columns by dispatch, **the other 24 on the GPU box** | **you** dispatch / run | credits + GPU |
-| 5 | `figures` re-scores and redraws on push | automatic | free |
+| 1 | `weekly` queries Europe PMC against a committed watermark, opens one ranked issue, and names the best new candidate | automatic, Monday | free |
+| 2 | `ingest` extracts and verifies that candidate and **opens a PR** | automatic | API tokens |
+| 3 | **review the PR** and merge | **you** | free |
+| 4 | `weekly` collects last week's hosted runs and submits the new rows | automatic, Monday | ~46 credits |
+| 4b | `gpu_autoscore.sh` on the GPU box scores the other 24 columns | cron on bizon | GPU |
+| 5 | `figures` re-scores, redraws, and stamps the README with the date | automatic | free |
 
-**Three of the five steps need a person, on purpose.** Step 2 because extraction is a
-model reading a PDF and no model may write `reference/` — a wrong row is worse than a
-missing one, since nobody can tell which rows to distrust. Step 4 because credits are real
-money and most columns need a local GPU. What is genuinely unattended is the watcher and
-the redraw.
+**Step 3 is the one gate, and it stays.** `ingest` runs a model over the paper and writes
+a candidate CSV; `append_paper.py` is still the only thing that writes `reference/`, and
+the job **cannot push to main** — it pushes a branch and opens a PR that `qc` checks. A
+wrong row is worse than a missing one, because nobody can tell which rows to distrust, so
+a person reads the diff. What the automation removes is the fetching and transcribing,
+not the judgement.
+
+**Expect most ingests to find nothing.** Europe PMC serves open-access full text; most of
+this field's sequences sit in a PDF supplement behind a paywall. For a closed paper the
+extractor correctly returns zero rows and no PR is opened. That is the design.
 
 **A merged row is not a scored row.** Of the 27 prediction columns only the three
-`rowan-<model>-*` ones come from CI; `boltz-2*`, `protenix-*`, `nesso-1*`, `dtsfm-cosine`,
-`interface-*` and ipDAE all run on the GPU box via `scripts/update.py` and the
-[Reproduce](#reproduce) commands. So a new paper lands in the set immediately, appears in
-`qc` as a coverage warning naming it, and only enters the figure once those are run.
+`rowan-<model>-*` ones come from GitHub Actions. `boltz-2*`, `protenix-*`, `nesso-1*`,
+`dtsfm-cosine`, `interface-*` and ipDAE need a GPU, which hosted runners do not have —
+and a *self-hosted* runner on a public repo would let any fork's pull request execute code
+on that machine, so there is none. `scripts/gpu_autoscore.sh` inverts it: a cron **on the
+GPU box** pulls main, runs `update.py --cofold`, runs QC, and pushes. Nothing inbound is
+exposed and no runner token exists. Install it there, not in CI:
+
+```
+# on the GPU box, crontab -e
+30 10 * * 1  /path/to/repo/scripts/gpu_autoscore.sh >> ~/autoscore.log 2>&1
+```
 
 See [GitHub Actions](#github-actions) for what each workflow does and what it costs.
 
@@ -319,7 +334,8 @@ Six workflows. Only one can spend money.
 | `qc` | PR touching `reference/`, `predictions/`, `qc_dataset.py` | 21 integrity checks; row-count floor read from the PR base branch | free |
 | `figures` | push touching `predictions/`, `reference/`, `score.py`, `make_figure.py` | re-score, redraw `figures/benchmark.png`, commit it | free |
 | `watch-sources` | `workflow_call`, dispatch | one Europe PMC query against a committed watermark; opens one issue. No model, no key, **cannot write `reference/`** | free |
-| `weekly` | Monday 09:00 UTC, dispatch | calls `watch-sources`; its scoring job is gated on `score=true`, which a cron cannot set, so a scheduled run only watches | free on a schedule |
+| `ingest` | called by `weekly`, dispatch | extracts + verifies one paper and **opens a PR**; cannot push to main; skips cleanly without `ANTHROPIC_API_KEY` | API tokens |
+| `weekly` | Monday 09:00 UTC, dispatch | `watch-sources` → `ingest` the best candidate → collect finished Rowan runs → submit new rows | **~46 credits/week** |
 | `rowan` | dispatch only | submit or collect hosted co-folding, larger batches | credits |
 
 Public repo, so Actions minutes are free; the only real cost is Rowan credits.
@@ -334,12 +350,17 @@ Public repo, so Actions minutes are free; the only real cost is Rowan credits.
   submit past it. A recorded workflow whose charge has not been collected yet counts at the
   measured rate rather than as free, so an uncollected run is never invisible to it.
 
-**Nothing spends on a schedule.** The Monday cron runs only the free watcher: the scoring
-job is `if: inputs.score == true`, and a scheduled run has no inputs, so it is skipped.
-Credits move only when a human dispatches `weekly -f score=true` or `rowan`, both of which
-GitHub restricts to write access. Set **Max credit overage** in the Rowan dashboard anyway;
-it defaults to unlimited, there is no billing API, and it is the only thing that can bound
-spend this repo does not know about.
+**The Monday run does spend**, up to 5 systems (~46 credits) plus the ingest's API
+tokens. Dispatch `weekly -f score=false` to watch without scoring. `BUDGET_CREDITS` is
+what bounds it over time: at 5 systems a week the 800-credit ceiling is about four months,
+after which the submit step refuses until someone raises it deliberately. Set **Max credit
+overage** in the Rowan dashboard too; it defaults to unlimited, there is no billing API,
+and it is the only thing that can bound spend this repo does not know about.
+
+**Collect runs before submit**, because a Rowan workflow finishes minutes to hours after
+submission — the run that submits cannot also collect. Monday's collect turns last
+Monday's submissions into predictions, and that push is what triggers `figures`. Without
+it the loop would submit forever and never produce a number.
 
 **Key safety.** The key lives in one repository secret and is never printed — the workflow
 logs its length, not its value. `rowan.yml` is `workflow_dispatch`-only, which GitHub

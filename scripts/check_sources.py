@@ -120,7 +120,12 @@ def main(update: bool) -> None:
 
     summary = ("\n".join(lines) if lines
                else "No paper in the window that was not already seen.")
-    _emit(changed=bool(fresh), summary=summary)
+    # the best new candidate, for the ingest job; only if it looks in scope
+    best = next((p for p in fresh if rank(p) >= 2), None)
+    top = (best.get("doi") or "") if best else ""
+    if top:
+        print(f"top candidate for ingest: {top}")
+    _emit(changed=bool(fresh), summary=summary, top_doi=top)
 
 
 def _since_date() -> str:
@@ -129,12 +134,16 @@ def _since_date() -> str:
     return (dt.date.today() - dt.timedelta(days=LOOKBACK_DAYS)).isoformat()
 
 
-def _emit(changed: bool, summary: str) -> None:
+def _emit(changed: bool, summary: str, top_doi: str = "") -> None:
+    """top_doi is the single best new candidate, for the ingest job to chain to.
+    Empty unless something scored >= 2, because a 0 is usually small-molecule
+    DRUG design -- the opposite direction -- and is not worth a model's tokens."""
     out = os.environ.get("GITHUB_OUTPUT")
     if not out:
         return
     with open(out, "a") as fh:
         fh.write(f"changed={'true' if changed else 'false'}\n")
+        fh.write(f"top_doi={top_doi}\n")
         fh.write("summary<<EOF\n" + summary + "\nEOF\n")
 
 
