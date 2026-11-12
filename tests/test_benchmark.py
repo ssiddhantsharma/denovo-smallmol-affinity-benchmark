@@ -504,3 +504,40 @@ def test_no_workflow_uses_pull_request_target():
         body = "\n".join(ln for ln in wf.read_text().splitlines()
                          if not ln.lstrip().startswith("#"))
         assert "pull_request_target" not in body, wf.name
+
+
+# --- workflow structure ------------------------------------------------------
+# yaml.safe_load is NOT workflow validation. Both of these shipped past it: a
+# job block mis-indented into `on.workflow_dispatch.inputs` (valid YAML, invalid
+# workflow) and a job requesting a permission its workflow did not hold. GitHub
+# reports either as a run failure with no log, which is slow to diagnose.
+
+def _workflows():
+    yaml = pytest.importorskip("yaml")
+    for path in sorted((ROOT / ".github/workflows").glob("*.yml")):
+        yield path.name, yaml.safe_load(path.read_text())
+
+
+def test_no_job_block_leaked_into_the_trigger_section():
+    job_keys = {"uses", "runs-on", "steps"}
+    for name, d in _workflows():
+        on = d.get(True) or d.get("on")
+        if not isinstance(on, dict):      # `on: [push, pull_request]` is a list
+            continue
+        inputs = on.get("workflow_dispatch") or {}
+        for key, spec in (inputs.get("inputs") or {}).items():
+            assert not (isinstance(spec, dict) and job_keys & set(spec)), \
+                f"{name}: '{key}' under workflow_dispatch.inputs looks like a job"
+
+
+def test_no_job_requests_more_permission_than_its_workflow():
+    for name, d in _workflows():
+        top = set(d.get("permissions") or {})
+        for job, spec in (d.get("jobs") or {}).items():
+            over = set(spec.get("permissions") or {}) - top
+            assert not over, f"{name}: job '{job}' requests {sorted(over)}, workflow has {sorted(top)}"
+
+
+def test_every_workflow_has_at_least_one_job():
+    for name, d in _workflows():
+        assert d.get("jobs"), f"{name}: no jobs"

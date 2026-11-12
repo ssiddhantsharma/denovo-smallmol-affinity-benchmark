@@ -1,26 +1,25 @@
 name: weekly
 
-# The Monday chain: look for new papers, and score anything already ingested.
+# The Monday chain, end to end:
 #
-# What it does NOT do, deliberately: ingest a paper by itself. Extraction is an
-# LLM reading a PDF, and the one property that makes this benchmark worth
-# citing is that no model has ever written reference/. A wrong row is worse
-# than a missing one, because nobody can tell which rows to distrust. So the
-# chain stops at a reviewable step and a human merges.
+#   1. watch     new papers -> one ranked issue, and the best candidate   (free)
+#   2. ingest    extract + verify that candidate -> a PULL REQUEST        (tokens)
+#   3. YOU       review and merge it                      (qc.yml gates the PR)
+#   4. score     collect last week's runs, submit new rows        (credits)
+#   5. figures   predictions change -> redraw + restamp     (figures.yml)
 #
-#   1. watch     new papers -> one ranked issue              (free)
-#   2. ingest    extract + verify -> a PR, never a push       (ingest.yml, needs a key)
-#   3. YOU       review and merge that PR                     (qc.yml gates it)
-#   4. score     collect last week's results, submit new rows (needs the secret)
-#   5. figures   predictions change -> redraw                 (figures.yml)
+# Step 3 is the gate and it stays. Step 2 runs a model over a paper, but it can
+# only open a PR -- append_paper.py is still the only writer of reference/, and
+# nothing a model produced reaches main without a person merging it. A wrong row
+# is worse than a missing one, because nobody can tell which rows to distrust.
 #
-# Step 4 runs on the schedule. It spends, bounded by max_systems here and by
-# BUDGET_CREDITS in the script, which is a ceiling on cumulative charge and the
-# only thing that bounds repeated runs. Dispatch with score=false to skip it.
+# Step 4 spends, bounded by max_systems here and by BUDGET_CREDITS in the
+# script, a ceiling on cumulative charge and the only thing that bounds repeated
+# runs. Dispatch with score=false to watch without scoring.
 #
 # Collect comes BEFORE submit on purpose: a Rowan workflow finishes server-side
-# minutes to hours after submission, so the run that submits cannot also collect.
-# Last week's results are what today's collect turns into predictions, and that
+# minutes to hours after submission, so the run that submits cannot also collect
+# it. Today's collect turns last week's submissions into predictions, and that
 # push is what triggers figures.yml. Without it the loop submits forever and
 # never produces a number.
 on:
@@ -28,8 +27,25 @@ on:
     - cron: '0 9 * * 1'
   workflow_dispatch:
     inputs:
-      # Only when the watcher found something that looks in scope. Opens a PR; it
-  # cannot reach main on its own. Skipped silently if ANTHROPIC_API_KEY is unset.
+      score:
+        description: 'collect finished runs and submit new ones (SPENDS CREDITS)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write   # ingest opens one; a job cannot exceed the workflow
+
+jobs:
+  watch:
+    uses: ./.github/workflows/watch-sources.yml
+    permissions:
+      contents: write
+      issues: write
+
+  # Only when the watcher found something that looks in scope (rank >= 2).
+  # Opens a PR; it cannot reach main. Skips silently without ANTHROPIC_API_KEY.
   ingest:
     needs: watch
     if: needs.watch.outputs.top_doi != ''
@@ -40,23 +56,6 @@ on:
     permissions:
       contents: write
       pull-requests: write
-
-  score:
-        description: 'collect finished runs and submit new ones (SPENDS CREDITS)'
-        type: boolean
-        default: true
-
-permissions:
-  contents: write
-  issues: write
-  pull-requests: write   # the ingest job opens one; a job cannot exceed this
-
-jobs:
-  watch:
-    uses: ./.github/workflows/watch-sources.yml
-    permissions:
-      contents: write
-      issues: write
 
   score:
     # Runs on the schedule. `inputs.score` is unset on a cron, so the test is
