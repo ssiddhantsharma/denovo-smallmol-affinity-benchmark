@@ -24,7 +24,7 @@ one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affini
 ![benchmark](figures/benchmark.png)
 
 <!-- figure-stamp -->
-*Figure regenerated **2026-11-12 07:28 UTC** from 60 systems, 25 methods drawn.*
+*Figure regenerated **2026-11-12 07:29 UTC** from 60 systems, 25 methods drawn, commit `a4addb8`.*
 <br>*Not drawn (no AUROC until both classes are scored): `rowan-boltz-2-affinity`, `rowan-boltz-2-iptm`, `rowan-boltz-2-pbind`.*
 <!-- /figure-stamp -->
 
