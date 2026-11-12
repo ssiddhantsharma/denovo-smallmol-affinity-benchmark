@@ -415,3 +415,33 @@ def test_figure_categories_all_have_a_colour():
     fig = _load("scripts/make_figure.py", "make_figure")
     assert not set(fig.CAT.values()) - set(fig.COL)
     assert not set(fig.CAT.values()) - set(fig.LABEL)
+
+
+def test_figure_stamp_is_rewritten_in_place():
+    """The README says when the figure was last redrawn. It is written by the
+    same call that writes the PNG so the two cannot drift, and it must replace
+    the previous stamp rather than accumulate one per run."""
+    pytest.importorskip("matplotlib")
+    fig = _load("scripts/make_figure.py", "make_figure")
+    readme = ROOT / "README.md"
+    before = readme.read_text()
+    try:
+        fig.write_stamp(60, 25, ["a-method"])
+        once = readme.read_text()
+        fig.write_stamp(60, 25, ["a-method"])
+        twice = readme.read_text()
+        assert once.count(fig.STAMP_OPEN) == twice.count(fig.STAMP_OPEN) == 1
+        assert "Figure regenerated" in once
+        assert "`a-method`" in once
+    finally:
+        readme.write_text(before)
+
+
+def test_count_flag_prints_a_bare_integer():
+    """weekly.yml reads this to decide whether to submit. It used to grep the
+    prose line, and renaming a column made the grep read zero and skip the
+    submit silently."""
+    out = subprocess.run([sys.executable, str(ROOT / "scripts/run_rowan_cofold.py"), "--count"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip().isdigit(), out.stdout

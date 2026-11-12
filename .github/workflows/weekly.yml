@@ -53,9 +53,14 @@ jobs:
       - name: is anything unscored?
         id: gap
         run: |
-          python scripts/run_rowan_cofold.py | tee /tmp/plan.txt
-          n=$(grep -oE '[0-9]+ without a rowan-cofold score' /tmp/plan.txt | grep -oE '^[0-9]+')
-          echo "n=${n:-0}" >> "$GITHUB_OUTPUT"
+          # --count prints the bare number. This used to grep the prose line,
+          # and renaming the column to rowan-<model>-* made the grep match
+          # nothing, read zero, and skip the submit silently -- a parse failure
+          # and "nothing to do" looked identical.
+          python scripts/run_rowan_cofold.py          # the readable plan, for the log
+          n=$(python scripts/run_rowan_cofold.py --count)
+          echo "n=$n" >> "$GITHUB_OUTPUT"
+          echo "unscored systems: $n" >> "$GITHUB_STEP_SUMMARY"
 
       - name: submit
         if: steps.gap.outputs.n != '0'
@@ -66,12 +71,11 @@ jobs:
             echo "::error::ROWAN_API_KEY is not set; skipping rather than failing the chain"
             exit 1
           fi
-          # This is a REAL submission on a schedule: ~5 systems x ~9.2 credits
-          # = ~46 credits a week, with nobody watching. Deliberate, and bounded
-          # three ways -- these two caps per run, and BUDGET_CREDITS in the
-          # script, which is a ceiling on the cumulative charge and will stop
-          # this job once total spend reaches it. Raise the batch size by
-          # dispatching rowan.yml directly rather than loosening it here.
+          # Reached only from a dispatch with score=true -- the job's `if`
+          # excludes the cron, where inputs is unset. ~5 systems x ~9.2 = ~46
+          # credits, bounded three ways: these two caps per run, and
+          # BUDGET_CREDITS in the script, a ceiling on cumulative charge across
+          # every run. Raise the batch by dispatching rowan.yml, not here.
           python scripts/run_rowan_cofold.py --submit \
             --max-credits 50 --max-systems 5
 

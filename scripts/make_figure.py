@@ -23,6 +23,35 @@ from score import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# "when was this last redrawn, and from what?" had no answer in the repo: the
+# figure is a binary blob and its commit date is the date CI happened to run,
+# not the date the data changed. The stamp is written by the same call that
+# writes the PNG, so the two cannot drift apart.
+STAMP_OPEN, STAMP_CLOSE = "<!-- figure-stamp -->", "<!-- /figure-stamp -->"
+
+
+def write_stamp(n_systems: int, drawn: int, partial: list[str]) -> None:
+    import datetime
+    import os
+
+    sha = (os.environ.get("GITHUB_SHA") or "")[:7]
+    when = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M UTC")
+    bits = [f"*Figure regenerated **{when}** from {n_systems} systems, {drawn} methods drawn"]
+    if sha:
+        bits.append(f", commit `{sha}`")
+    bits.append(".*")
+    line = "".join(bits)
+    if partial:
+        line += ("\n<br>*Not drawn (no AUROC until both classes are scored): "
+                 + ", ".join(f"`{p}`" for p in partial) + ".*")
+    readme = ROOT / "README.md"
+    txt = readme.read_text()
+    if STAMP_OPEN not in txt or STAMP_CLOSE not in txt:
+        return
+    head, rest = txt.split(STAMP_OPEN, 1)
+    _, tail = rest.split(STAMP_CLOSE, 1)
+    readme.write_text(f"{head}{STAMP_OPEN}\n{line}\n{STAMP_CLOSE}{tail}")
 # categories come from the registry; only their presentation is decided here
 CAT = {**methods.CATEGORY, "combination": "combo"}
 COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8", "combo": "#8a5a72", "seq": "#7B4FA0",
@@ -105,7 +134,7 @@ def stats(rows, methods):
         print(f"not in the figure, scored on only some systems: {', '.join(partial)}")
     (_, _), (sp, sy) = combine_loo(rows)
     spec.append(("combination", auroc(sp, sy), *bootstrap_ci(sp, sy, auroc), "combo", f"{len(sy)}"))
-    return wlig, spec, not_separable(rows, methods)
+    return wlig, spec, not_separable(rows, methods), partial
 
 
 def bars(ax, data, ref, ref_label, xlabel, xlim, n_header):
@@ -159,7 +188,9 @@ def render(wlig, spec, ns, out, height):
 
 def main():
     rows, methods = load()
-    render(*stats(rows, methods), ROOT / "figures/benchmark.png", 8.8)
+    wlig, spec, notsep, partial = stats(rows, methods)
+    render(wlig, spec, notsep, ROOT / "figures/benchmark.png", 8.8)
+    write_stamp(len(rows), len(spec), [p.split(" (")[0] for p in partial])
 
 
 if __name__ == "__main__":

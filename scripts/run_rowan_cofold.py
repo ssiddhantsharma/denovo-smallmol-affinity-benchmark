@@ -256,11 +256,18 @@ def main() -> int:
                     help="boltz_2 | boltz_2_1 | openfold_3 | chai_1r | esmfold_2")
     ap.add_argument("--max-credits", type=int, default=None, help="per-workflow cap")
     ap.add_argument("--max-systems", type=int, default=None, help="cap this session")
+    ap.add_argument("--count", action="store_true",
+                    help="print only how many systems lack a score for --model, "
+                         "for scripting. CI parsed the prose line instead and a "
+                         "reworded message silently made it read zero.")
     ap.add_argument("--draft", action="store_true",
                     help="validate the full submission path without executing or spending")
     a = ap.parse_args()
 
     todo = [r for r in rows() if r["id"] not in already_scored(a.model)]
+    if a.count:
+        print(len(todo))
+        return 0
     print(f"{len(rows())} reference systems | {len(todo)} without a "
           f"{slug(a.model)} hosted score")
     if a.collect:

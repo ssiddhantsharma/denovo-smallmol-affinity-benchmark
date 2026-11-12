@@ -6,9 +6,9 @@ name: rowan
 #
 #   * workflow_dispatch ONLY for THIS workflow. GitHub restricts manual dispatch
 #     to users with write access, so only a maintainer can start a run here.
-#     Note that weekly.yml IS scheduled and does submit unattended, capped at
-#     5 systems (~46 credits) a week; this file is the manual, larger-batch
-#     path. BUDGET_CREDITS is what bounds the two of them together.
+#     weekly.yml is scheduled, but its scoring job is gated on a dispatch input
+#     that a cron cannot set, so it never spends on a schedule either. This file
+#     is the manual, larger-batch path. BUDGET_CREDITS bounds both together.
 #   * Secrets are never exposed to workflows triggered by pull_request from a
 #     fork, and this workflow has no pull_request trigger at all. There is no
 #     pull_request_target anywhere in this repo - that is the trigger that would
