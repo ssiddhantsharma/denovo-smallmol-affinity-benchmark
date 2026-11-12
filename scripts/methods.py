@@ -6,6 +6,12 @@ file had never been written was invisible: it reported "nothing to update" while
 three rowan-cofold columns had never been produced at all. A missing file and a
 file missing rows are different failures and both need naming.
 
+The producer string must be the script that actually writes the file. Four PAE
+columns were attributed to run_predictors.py and run_protenix_confidence.py when
+interface_metrics.py writes them -- a registry that names the wrong producer is
+worse than none, because it sends you to the wrong script with confidence. Check
+with: grep -n 'write("<column>"' scripts/*.py
+
 Adding a scorer means adding it here. That is the point: the registry is what
 lets a tool say "this column is absent" rather than silently not looking for it.
 """
@@ -16,16 +22,16 @@ from __future__ import annotations
 PRODUCERS: dict[str, str] = {
     "boltz-2": "run_predictors.py boltz",
     "boltz-2-iptm": "run_predictors.py boltz",
-    "boltz-2-pae-mean": "run_predictors.py boltz",
-    "boltz-2-pae-min": "run_predictors.py boltz",
+    "boltz-2-pae-mean": "interface_metrics.py",
+    "boltz-2-pae-min": "interface_metrics.py",
     "boltz-2-pbind": "run_predictors.py boltz",
     "nesso-1": "run_predictors.py nesso",
     "nesso-1-pbind": "run_predictors.py nesso",
     "protenix-gpde": "run_protenix_confidence.py",
     "protenix-iptm": "run_protenix_confidence.py",
     "protenix-ligiptm": "run_protenix_confidence.py",
-    "protenix-pae-mean": "run_protenix_confidence.py",
-    "protenix-pae-min": "run_protenix_confidence.py",
+    "protenix-pae-mean": "interface_metrics.py",
+    "protenix-pae-min": "interface_metrics.py",
     "protenix-plddt-binder": "run_protenix_confidence.py",
     "protenix-plddt-ligand": "run_protenix_confidence.py",
     "protenix-ptm": "run_protenix_confidence.py",

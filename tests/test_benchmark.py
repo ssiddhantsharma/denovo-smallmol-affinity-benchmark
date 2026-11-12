@@ -284,4 +284,24 @@ def test_registry_names_a_producer_for_every_column():
     spec.loader.exec_module(methods)
     assert methods.PRODUCERS, "registry is empty"
     assert all(v.strip() for v in methods.PRODUCERS.values()), "a column has no producer"
-    assert methods.OPTIONAL <= set(methods.PRODUCERS), "optional names must be registered"
+    assert set(methods.PRODUCERS) >= methods.OPTIONAL, "optional names must be registered"
+
+
+def test_registry_producers_point_at_the_script_that_writes_the_file():
+    """A registry naming the wrong producer is worse than none: it sends you to
+    the wrong script with confidence. Four PAE columns were attributed to
+    run_predictors/run_protenix_confidence when interface_metrics.py writes them."""
+    import re
+    import subprocess
+
+    spec = importlib.util.spec_from_file_location("methods", ROOT / "scripts/methods.py")
+    methods = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(methods)
+    wrong = []
+    for col, producer in methods.PRODUCERS.items():
+        hits = subprocess.run(
+            ["grep", "-rlE", rf'write\("{re.escape(col)}"|"{re.escape(col)}_predictions',
+             str(ROOT / "scripts")], capture_output=True, text=True).stdout.split()
+        if hits and not any(producer.split()[0] in h for h in hits):
+            wrong.append(f"{col}: registry says {producer}, written by {hits}")
+    assert not wrong, "\n".join(wrong)
