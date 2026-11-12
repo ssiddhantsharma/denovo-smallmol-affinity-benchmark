@@ -23,16 +23,16 @@ To add one by hand: run the `add-smallmol-paper` skill, or
 
 **Step 3 is the one gate, and it stays.** `ingest` runs a model over the paper and writes a
 candidate CSV. `append_paper.py` is still the only thing that writes `reference/`, and the job
-**cannot push to main** — it pushes a branch and opens a PR that `qc` checks. A wrong row is
-worse than a missing one, because nobody can tell which rows to distrust, so a person reads the
-diff. The automation removes the fetching and transcribing, not the judgement.
+**cannot push to main**: it pushes a branch and opens a PR that `qc` checks. A wrong row is worse
+than a missing one, because nobody can tell which rows to distrust, so a person reads the diff.
+The automation removes the fetching and transcribing, not the judgement.
 
 **Expect most ingests to find nothing.** Europe PMC serves open-access full text; most of this
 field's sequences sit in a PDF supplement behind a paywall. For a closed paper the extractor
 correctly returns zero rows and opens no PR.
 
 **The search query favours precision.** `"de novo" AND "small molecule"` is dominated by the
-opposite problem — designing a *drug* against a natural protein — at about 2 useful hits in 23.
+opposite problem, designing a *drug* against a natural protein, at about 2 useful hits in 23.
 Requiring the designed thing to be the protein gives 5 hits over three years of which 2 are real;
 adding biosensor terms for recall brought back SPR instruments and imprinted polymers. Recall is
 the weak side on purpose: treat the weekly issue as a reading list.
@@ -56,7 +56,7 @@ Locally: `python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-sys
 
 Columns are `rowan-<model>-{affinity,pbind,iptm}`. **The model is in the name deliberately**:
 `--model` is a dispatch input, so a fixed name would let a Chai-1r run overwrite Boltz-2's numbers
-in place. They are also separate from the local `boltz-2*` columns and must stay separate — same
+in place. They are also separate from the local `boltz-2*` columns and must stay separate: same
 model family, different deployment and MSA server.
 
 Measured cost is **9.1–9.4 credits per system**, so all 60 is roughly 560. Read it only from a
@@ -69,7 +69,7 @@ ipDAE (these need the full residue-residue PAE matrix; a Rowan result carries `l
 and `confidence_score`, no PAE). Everything else runs hosted or on CPU.
 
 Hosted runners have no GPU, and a *self-hosted* runner on a public repo would let any fork's pull
-request execute code on that machine — so there is none. `scripts/gpu_autoscore.sh` inverts it: a
+request execute code on that machine, so there is none. `scripts/gpu_autoscore.sh` inverts it: a
 cron **on the GPU box** pulls main, runs `update.py --cofold`, runs QC and pushes. Nothing inbound
 is exposed and no runner token exists.
 
@@ -93,7 +93,7 @@ is exposed and no runner token exists.
 Public repo, so Actions minutes are free; the only real cost is Rowan credits and ingest tokens.
 
 **Collect runs before submit**, because a Rowan workflow finishes minutes to hours after
-submission — the run that submits cannot also collect. Monday's collect turns last Monday's
+submission, and the run that submits cannot also collect. Monday's collect turns last Monday's
 submissions into predictions, and that push triggers `figures`. Without it the loop would submit
 forever and never produce a number.
 
@@ -117,7 +117,7 @@ thing that can bound spend this repo does not know about.
 
 ### Keys
 
-Both live in repository secrets and are never printed — a workflow logs a key's length, not its
+Both live in repository secrets and are never printed: a workflow logs a key's length, not its
 value. `rowan.yml` is `workflow_dispatch`-only, which GitHub restricts to write access. Fork pull
 requests never receive repository secrets, and no workflow here uses `pull_request_target`, the
 trigger that would hand a fork's code the keys. Dispatch inputs are passed through the environment
@@ -127,13 +127,13 @@ run of any change validates the whole submission path, executes nothing and cost
 ## Conventions
 
 - `scripts/methods.py` is the registry: every column, what produces it, and its figure category.
-  Adding a scorer means adding it there — a test and `qc_dataset.py` both fail on a registered
-  method with no category, which is what stops `make_figure.py` dying on a bare `KeyError`.
+  Adding a scorer means adding it there. A test and `qc_dataset.py` both fail on a registered
+  method with no category, which is what stops `make_figure.py` failing on a bare `KeyError`.
 - Prediction files are `predictions/<method>_predictions.csv` with `method,id,predicted_affinity`,
   joined to the reference by `id`. Lower-is-better metrics go in `LOWER_BETTER` in `score.py`.
 - Never gate CI on a human-readable sentence. `run_rowan_cofold.py` and `update.py` both have
   `--count` for this: `weekly` used to grep a prose line, and renaming a column made the grep match
-  nothing, read zero and skip the submit — a parse failure and "nothing to do" looked identical.
+  nothing, read zero and skip the submit, so a parse failure and "nothing to do" looked identical.
 - `yaml.safe_load` is not workflow validation. A job block mis-indented into
   `on.workflow_dispatch.inputs` parses fine and GitHub rejects the file; so does a job requesting a
   permission its workflow lacks. Both surface as a run failure with no log, and both have tests.

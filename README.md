@@ -13,10 +13,10 @@ designs.
 
 Affinity is ranked **within-ligand**: among the de-novo proteins that bind the *same* ligand, Spearman
 of a metric against pKd, median across ligands (the analog of the within-target correlation used on
-de-novo protein sets). This is reported rather than a pooled Spearman across all binders on purpose:
-the set spans 19 ligands, and a pooled correlation is dominated by ligand composition (cLogP) instead
-of the interface, so pooled numbers are a confound, not a result. A ligand-only score like cLogP is
-constant within a ligand and drops out, which is the point. Classification (right vs wrong ligand) is
+de-novo protein sets). It is reported in place of a pooled Spearman across all binders because the
+set spans 19 ligands, and a pooled correlation is dominated by ligand composition, which cLogP
+measures, rather than by the interface. A ligand-only score such as cLogP is
+constant within a ligand and drops out of this statistic. Classification (right vs wrong ligand) is
 one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affinity_pred_value`.
 
 ## Results
@@ -24,78 +24,82 @@ one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affini
 ![benchmark](figures/benchmark.png)
 
 <!-- figure-stamp -->
-*Figure regenerated **2026-11-12 12:05 UTC** from 60 systems, 25 methods drawn.*
+*Figure regenerated **2026-11-12 12:16 UTC** from 60 systems, 25 methods drawn.*
 <br>*Not drawn (no AUROC until both classes are scored): `rowan-boltz-2-affinity`, `rowan-boltz-2-iptm`, `rowan-boltz-2-pbind`.*
 <!-- /figure-stamp -->
 
 Every metric, two panels: within-ligand rank-pKd (left, composition controlled; the dashed line is no
 correlation, rho = 0) and right-vs-wrong-ligand AUROC (right; the dashed line is chance, 0.5). Bars
-are 95% bootstrap CIs. `score.py` prints every number, including the pooled Spearman kept only for
-transparency.
+are 95% bootstrap CIs. `score.py` prints every value, including the pooled Spearman, which is
+retained for transparency.
 
-- **Within ligand, co-folder interface confidence leads.** Holding the molecule fixed (median over the
-  5 ligands with >= 3 protein binders), the interface-confidence metrics come to the front: Protenix
-  ipTM / lig-ipTM +0.70, Boltz-2 ipTM +0.60, Protenix pLDDT-ligand +0.43, interface-PAE in the same
-  band. The physics and ML rescorers are middling (SQM +0.33, AEV-PLIG +0.35, GNINA +0.30) and the
-  affinity heads trail (Boltz-2 +0.30, Nesso-1 -0.05). This is the same confidence family (iPTM, pTM,
-  pLDDT, interface-PAE) that ranks KD on de-novo *protein* sets. CIs are very wide (only 5 ligand
-  groups, 3 to 9 binders each), so the ordering is suggestive, not decisive.
-- **Almost none of that ordering is statistically separable, and the table says so.** `score.py`
-  runs a paired bootstrap over the ligands *both* metrics scored, and **18 of 21** metrics are not
-  distinguishable from the top one. The only three the top metric beats with an interval clear of
-  zero are Nesso-1 P(bind), SQM, and Nesso-1 -- and that is before correcting for 21 comparisons,
-  so even those are weak. Read the left panel as a rough ordering of families, never as a ranking
-  of individual metrics: "Protenix ipTM +0.70 beats Boltz-2 ipTM +0.60" is not a finding, it is
-  two medians over the same five ligands.
-- **Specificity also belongs to the co-folders.** On telling the correct ligand from the wrong one,
-  the interface-confidence metrics lead: Boltz-2 / Protenix ipTM 0.85 to 0.91, Protenix pLDDT-ligand
-  0.86, pTM 0.79. cLogP, dtSFM, and the physics/ML rescorers are near chance. A pure-geometry pose
-  baseline, ligand burial (`interface-ligburial`, fraction of the ligand within 4.5 A of the protein),
-  reaches 0.71, above cLogP, but carries no affinity-ranking signal that survives its interval
-  (within-ligand rho +0.32 over only 3 ligands, CI [-0.62, +0.71]): the real ligand is more buried,
-  yet burial does not demonstrably order KD.
-- **A sequence-native affinity FM fails too; the failure is the data regime, not co-folding.**
-  dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at chance on de
-  novo (AUROC 0.53, within-ligand +0.10), yet its featurization validates on in-distribution natural
-  pairs (true-vs-shuffled AUROC 0.863; `scripts/run_dtsfm.py` gates on that positive control first).
+- **Co-folder interface confidence ranks highest within ligand.** Holding the molecule fixed
+  (median over the 5 ligands with at least 3 protein binders), the interface-confidence metrics
+  lead: Protenix ipTM and lig-ipTM at +0.70, Boltz-2 ipTM at +0.60, Protenix pLDDT-ligand at +0.43,
+  with interface-PAE in the same band. The physics and machine-learning rescorers are mid-ranked
+  (SQM +0.33, AEV-PLIG +0.35, GNINA +0.30), and the affinity heads rank below them (Boltz-2 +0.30,
+  Nesso-1 -0.05). This is the same confidence family (iPTM, pTM, pLDDT, interface-PAE) that ranks
+  KD on de-novo *protein* sets. Confidence intervals are wide, over 5 ligand groups of 3 to 9
+  binders each, so the ordering is suggestive rather than decisive.
+- **Almost none of that ordering is statistically separable.** `score.py` runs a paired bootstrap
+  over the ligands that *both* metrics scored, and **18 of 21** metrics are not distinguishable
+  from the leading one. The three it separates from with an interval clear of zero are Nesso-1
+  P(bind), SQM and Nesso-1, and that is before correcting for 21 comparisons.
+  The left panel supports an ordering of method families rather than of individual metrics: the
+  gap between Protenix ipTM at +0.70 and Boltz-2 ipTM at +0.60 is two medians over the same five
+  ligands.
+- **The co-folders also lead on specificity.** On distinguishing the correct ligand from the wrong
+  one, the interface-confidence metrics rank highest: Boltz-2 and Protenix ipTM at 0.85 to 0.91,
+  Protenix pLDDT-ligand at 0.86, pTM at 0.79. cLogP, dtSFM and the physics and machine-learning
+  rescorers are near chance. A pure-geometry pose baseline, ligand burial
+  (`interface-ligburial`, the fraction of the ligand within 4.5 A of the protein), reaches 0.71,
+  above cLogP, but carries no affinity-ranking signal that survives its interval (within-ligand rho
+  +0.32 over 3 ligands, CI [-0.62, +0.71]). The correct ligand is more buried, but burial does not
+  demonstrably order KD.
+- **A sequence-native affinity model also fails, which implicates the data regime rather than
+  co-folding.** dtSFM (`dtsfm-cosine`), a 714k-pair drug-target specificity foundation model, is at
+  chance on de novo designs (AUROC 0.53, within-ligand +0.10), while its featurization validates on
+  in-distribution natural pairs (true-versus-shuffled AUROC 0.863). `scripts/run_dtsfm.py` gates on
+  that positive control first.
 
 | task | best single | cLogP | combination (LOO) |
 |---|---|---|---|
 | rank pKd, within-ligand (median Spearman) | +0.70 | n/a (constant per ligand) | not defined |
 | tell right from wrong ligand (AUROC) | 0.91 | 0.53 | 0.84 |
 
-> **Corrected 2026-11-11.** The rank statistics broke ties by row order, using a Spearman
-> shortcut that is not valid with ties. Five metrics carry them, so their numbers were wrong —
-> most visibly `interface-ligburial`'s within-ligand rho, published as +0.10 and actually
-> **+0.32**. Ranks are midranks now, matching scipy to 1e-16. Nine of 68 point estimates
-> moved; no conclusion here changed.
+> **Correction, 2026-11-11.** The rank statistics broke ties by row order, using a Spearman
+> shortcut that is not valid in the presence of ties. Five metrics carry ties, so their values
+> were incorrect; the largest change is `interface-ligburial`'s within-ligand rho, published as
+> +0.10 and corrected to +0.32. Ranks are now midranks, agreeing with scipy to 1e-16. Nine of 68
+> point estimates changed and no conclusion was affected.
 
-## Caveats
+## Limitations
 
-**The within-ligand axis rests on far less data than "60 pairs" suggests.** Only 5 of the 19
-ligands have the >= 3 protein binders a within-ligand rank needs, so that median is taken over
-**5 ligands / 30 pairs** for most metrics (3 ligands / 18 pairs for `interface-ligburial`, which is
-missing some poses). The figure prints that n beside every bar and `score.py` prints it as `n_lig`
-and `n_pairs`, because a bar without its n reads as a ranking. The other 14 ligands contribute to
-the AUROC panel (all 60 pairs) but not to the affinity panel.
+**The within-ligand axis rests on less data than the 60 pairs suggest.** Only 5 of the 19 ligands
+have the 3 or more protein binders a within-ligand rank requires, so that median is taken over
+5 ligands and 30 pairs for most metrics, and over 3 ligands and 18 pairs for `interface-ligburial`,
+for which some poses are missing. The figure prints this n beside every bar and `score.py` reports
+it as `n_lig` and `n_pairs`. The remaining 14 ligands contribute to the AUROC panel, which uses all
+60 pairs, but not to the affinity panel.
 
-Small n (49 + 11): CIs are wide and orderings are suggestive. The 11 negatives are confirmed
-non-binders from a handful of designed proteins. This small n reflects the field, not the search: a
-systematic survey of the de novo literature turns up essentially no further designed binders of
-*organic* small molecules with a precise measured KD. The remaining de novo binders are
-metallo-cofactor systems (heme, Zn-porphyrin, Zn-chlorophyll maquettes) or designed pockets grafted
-onto natural scaffolds, so the set is close to the available universe rather than a sample of it. The
-three cofolders share the AF3-style family, so they are not independent. Cofolder metrics carry
-run-to-run diffusion-sampling variation, and on this set that is **measured, not estimated**: see
-"Re-folding moves these numbers" below. An earlier version of this file guessed "~0.05 Spearman";
-the real figure reaches **0.26**.
-Positive KDs come from mixed assays and are not cross-calibrated.
+**The set is small and the intervals are correspondingly wide.** The 11 negatives are confirmed
+non-binders drawn from a small number of designed proteins. The size reflects the field rather than
+the search: a systematic survey of the de novo literature finds few further designed binders of
+*organic* small molecules with a precise measured KD. The remainder are metallo-cofactor systems
+(heme, Zn-porphyrin and Zn-chlorophyll maquettes) or designed pockets grafted onto natural
+scaffolds, so the set approximates the available universe rather than sampling it.
+
+**The predictors are not independent, and the values are not stable.** The three cofolders share
+the AF3-style architecture. Cofolder metrics carry run-to-run diffusion-sampling variation, which
+on this set was measured rather than estimated and reaches 0.26 in within-ligand Spearman (see
+[Sensitivity to re-folding](#sensitivity-to-re-folding)). Positive KDs come from mixed assays and
+are not cross-calibrated.
 
 ## Methods scored
 
-Every predictor is a third-party model or tool; this repo only wires it to the split, converts its
-outputs to a common convention, and scores it. Full citations are in [References](#references);
-please cite the original work when using any result here.
+Every predictor is a third-party model or tool. This repository connects it to the split, converts
+its outputs to a common convention and scores it. Full citations are in
+[References](#references); please cite the original work when using any result here.
 
 | column(s) | method | family | reference |
 |---|---|---|---|
@@ -110,14 +114,12 @@ please cite the original work when using any result here.
 
 The confidence metrics cover the de-novo metric set used on protein binders (iPTM, pTM, pLDDT,
 interface-PAE, contacts). ipSAE, ipDAE and LIS, the strongest there, are protein-protein scores
-built from the full residue-residue PAE matrix. Which of them is available depends on the folder,
-and an earlier version of this README wrongly said the matrix "was not saved here" across the
-board:
+built from the full residue-residue PAE matrix. Availability depends on the folder:
 
 | folder | full residue-residue PAE | consequence |
 |---|---|---|
-| Boltz-2 | **saved** (`--write_full_pae`) | ipDAE is computable with no GPU -- `scripts/run_ipdae.py` |
-| Protenix | not saved, only `chain_pair_pae_{min,mean}` | ipSAE/ipDAE/LIS would need a re-fold |
+| Boltz-2 | saved (`--write_full_pae`) | ipDAE is computable without a GPU, via `scripts/run_ipdae.py` |
+| Protenix | not saved, only `chain_pair_pae_{min,mean}` | ipSAE, ipDAE and LIS would require a re-fold |
 
 For a few-atom ligand the natural analog of these scores is lig-ipTM plus interface-PAE, which are
 included for both folders.
@@ -125,87 +127,89 @@ included for both folders.
 De-novo designs and labels are from the papers cited per row (`source`, `source_url`) in
 `reference/system_reference.csv`.
 
-## Re-folding moves these numbers (and the published ones were irreproducible)
+## Sensitivity to re-folding
 
 The Protenix predictions were re-derived from the folds that still exist (`_work/px_out`, seed 101,
 5 diffusion samples per system, averaged). They did not reproduce what was committed. The committed
-values came from an **earlier fold that no longer exists**: regenerating from the surviving outputs
-matches the current files to 0.000000 and the previously published ones only to 0.036.
+values came from an earlier fold that no longer exists: regenerating from the surviving outputs
+matches the current files to 0.000000 and the earlier release only to 0.036.
 
-Worse, the committed set was **mixing two folds**: `protenix-ptm`, both pLDDT columns and both
-interface-geometry columns regenerated byte-identical (they were derived later, from the surviving
-fold), while `protenix-{iptm,ligiptm,gpde,ranking,pae-*}` did not. The figure was comparing metrics
-from fold A against metrics from fold B.
+The earlier set also mixed two folds. `protenix-ptm`, both pLDDT columns and both
+interface-geometry columns regenerated byte-identical, having been derived later from the surviving
+fold, while `protenix-{iptm,ligiptm,gpde,ranking,pae-*}` did not. The figure therefore compared
+metrics from one fold against metrics from another.
 
-Everything Protenix-derived is now regenerated from the one surviving fold, so the numbers follow
-from data in hand via `python scripts/run_predictors.py protenix-parse` (no GPU). What that cost:
+All Protenix-derived columns are now regenerated from the single surviving fold via
+`python scripts/run_predictors.py protenix-parse`, which requires no GPU. The effect on the
+reported values:
 
-| metric | published | surviving fold | delta |
+| metric | earlier release | surviving fold | delta |
 |---|---|---|---|
 | `protenix-gpde` | +0.50 | **+0.24** | **-0.26** |
 | `protenix-ranking` | +0.47 | +0.58 | +0.11 |
 | `protenix-pae-min` | +0.52 | +0.45 | -0.07 |
 | `protenix-iptm` / `-ligiptm` | +0.65 | +0.70 | +0.05 |
 
-**This is the single most useful thing in the benchmark.** Re-running the *same model at the same
-seed* moves a within-ligand median by up to **0.26** — larger than almost every gap in the ranking
-it is used to justify. It is an independent confirmation of the separability result above: when one
-re-fold can move a metric by 0.26, an ordering whose neighbours differ by 0.03-0.15 is noise. Treat
-any single-fold affinity benchmark number, here or elsewhere, as carrying error bars of this size
-whether or not they are drawn. The best metric is unchanged (`protenix-iptm`), 18 of 21 metrics
-remain non-separable from it, and the AUROC panel barely moves.
+Re-running the same model at the same seed moves a within-ligand median by up to 0.26, which
+exceeds almost every gap in the ordering such values are used to justify. This is independent
+support for the separability result above: where one re-fold moves a metric by 0.26, an ordering
+whose neighbours differ by 0.03 to 0.15 is not resolved. Single-fold affinity benchmark values,
+here and elsewhere, should be read as carrying uncertainty of this magnitude whether or not it is
+drawn. The leading metric is unchanged (`protenix-iptm`), 18 of 21 metrics remain non-separable
+from it, and the AUROC panel is largely unaffected.
 
 The Boltz-2 and Nesso-1 columns are untouched: their outputs are gone, so they could not be
 re-derived and were not re-run. Those columns are still from their original single fold.
 
-## ipDAE: implemented, not yet run
+## ipDAE
 
-`scripts/run_ipdae.py` ports BindCraft2's `i_pDAE` to a protein-ligand interface. The math is
-unit-tested; **it has not been run against the real folds**, because the Boltz-2 outputs live on
-the box that did the folding. Nothing above includes it.
+`scripts/run_ipdae.py` ports BindCraft2's `i_pDAE` to a protein-ligand interface. The
+implementation is unit-tested but has not been run against the folds, which remain on the machine
+that produced them, so no result above includes it.
 
-Expect it to add little here. Its partner-count scale `d0` only exceeds 1.0 at **27+ partners**
-(verified numerically, pinned by a test), and a ligand atom never contacts 27 residues — so `d0`
-pins to 1.0 and the score reduces to the max over anchors of mean `1/(1+PAE²)`. That is not a
-monotone transform of mean interface PAE, but it reads the same matrix as `boltz-2-pae-{min,mean}`,
-already here at within-ligand +0.62 / +0.50. Given that 18 of 21 metrics are not separable from the
-top one, it should land in the same blob rather than add an axis. `--report` prints the measured
-fraction of anchors with `d0 > 1`, so this is checked rather than assumed.
+Its contribution is expected to be small. The partner-count scale `d0` exceeds 1.0 only at 27 or
+more partners, verified numerically and pinned by a test, and a ligand atom does not contact 27
+residues. `d0` therefore pins to 1.0 and the score reduces to the maximum over anchors of mean
+`1/(1+PAE²)`. This is not a monotone transform of mean interface PAE, but it reads the same matrix
+as `boltz-2-pae-{min,mean}`, already reported at within-ligand +0.62 and +0.50. Given that 18 of 21
+metrics are not separable from the leading one, ipDAE is more likely to fall within that group than
+to add an independent axis. `--report` prints the measured fraction of anchors with `d0 > 1`.
 
-Contact is heavy-atom at 4.5 Å, not CA-CA at 8 Å — a ligand has no CA — matching what
-`run_interface.py` already uses. The script fails loudly if the structure's residue count disagrees
-with the sequence, or if the PAE token count is not `len(protein) + n_ligand_heavy_atoms`: Boltz-2's
-PAE is paired with Boltz-2's own structure, and crossing it with the Protenix pose would score one
-model's confidence against another model's coordinates.
+Contact is defined as heavy-atom within 4.5 Å rather than CA-CA within 8 Å, since a ligand has no
+CA, matching the definition `run_interface.py` uses. The script exits with an error if the
+structure's residue count disagrees with the sequence, or if the PAE token count is not
+`len(protein) + n_ligand_heavy_atoms`. Boltz-2's PAE is paired with Boltz-2's own structure, and
+combining it with the Protenix pose would score one model's confidence against another model's
+coordinates.
 
-## Rowan physics / docking rescoring
+## Physics and docking rescoring
 
-The open question this split raises, *does any method actually track KD on de-novo binders, or does
-that only work on natural complexes?*, is probed with [Rowan](https://docs.rowansci.com)'s
-binding-affinity workflow over scorer families that are not co-folding heads. Each scores a bound
-pose (the best-ranked of Protenix v2's 5 samples per system), fed to Rowan through the
-[`rowan-python`](https://github.com/rowansci/rowan-python) SDK in its apo-protein + external-pose
-mode; SQM additionally runs a protonation (protein-preparation) step first. Wiring is in
-`scripts/run_rowan.py`.
+Whether any method tracks KD on de-novo binders, or only on natural complexes, is examined here
+with [Rowan](https://docs.rowansci.com)'s binding-affinity workflow across scorer families that are
+not co-folding heads. Each scores a bound pose, the best-ranked of Protenix v2's five samples per
+system, submitted through the [`rowan-python`](https://github.com/rowansci/rowan-python) SDK in its
+apo-protein plus external-pose mode. SQM additionally runs a protein-preparation step first.
+Implementation is in `scripts/run_rowan.py`.
 
-- **Physics (SQM) is middling once the ligand is controlled.** Within-ligand, SQM is +0.33, below the
-  interface-confidence metrics (ipTM ~0.7). On the confounded pooled Spearman it reaches +0.40, which
-  an earlier version of this README over-read as a physics win; that edge was ligand composition, the
-  same thing cLogP reads, not the interface.
-- **The learned rescorers do not stand out either.** GNINA (within-ligand +0.30) and AEV-PLIG
-  (+0.35), both trained on natural complexes (PDBbind-style), stay middling.
-- **None of the three help with specificity.** On telling the correct ligand from the wrong one, SQM
-  (0.57), GNINA (0.58), and AEV-PLIG (0.47) are all near chance, far below co-folder ipTM (0.91).
+- **Semiempirical physics is mid-ranked once the ligand is controlled.** Within-ligand, SQM reaches
+  +0.33, below the interface-confidence metrics at approximately +0.70. On the confounded pooled
+  Spearman it reaches +0.40. That margin comes from ligand composition, the same property cLogP
+  measures, rather than from the interface.
+- **The learned rescorers are also mid-ranked.** GNINA at +0.30 and AEV-PLIG at +0.35 within-ligand,
+  both trained on natural complexes of the PDBbind type.
+- **None of the three contributes to specificity.** On distinguishing the correct ligand from the
+  wrong one, SQM reaches 0.57, GNINA 0.58 and AEV-PLIG 0.47, all near chance and well below
+  co-folder ipTM at 0.91.
 
-So physics and docking rescoring do not beat the co-folders' own interface-confidence metrics here;
-the honest read is that nothing in this family clears the bar that ipTM already sets within-ligand.
+On this set, physics and docking rescoring do not improve on the co-folders' own
+interface-confidence metrics.
 
-Caveats: SQM's truncated-pocket energies are noisy (cut salt bridges leave some pockets
+Limitations: SQM's truncated-pocket energies are noisy (cut salt bridges leave some pockets
 electrostatically incomplete). Neither SQM nor AEV-PLIG can score the three silicon-rhodamine dye
 systems (COSMO2 has no Si parameters; AEV-PLIG rejects the Si poses), so those cells are blank; GNINA
 scores all 60.
 
-## Layout
+## Repository layout
 
 ```
 reference/system_reference.csv                      id, protein, ligand_name, sequence, smiles, source, source_url
@@ -220,7 +224,7 @@ Every `predictions/*.csv` joins to the reference by `id` and is scored automatic
 column means adding a file and registering it; `scripts/qc_dataset.py` runs 21 integrity checks on
 every PR.
 
-## Adding to it
+## Extending the set
 
 The set grows by a few papers a year. A weekly job searches Europe PMC, drafts an extraction and
 opens a pull request; a person reviews and merges it, because a wrong row is worse than a missing
