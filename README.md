@@ -102,6 +102,7 @@ please cite the original work when using any result here.
 | `dtsfm-cosine` | dtSFM encoder cosine (drug-target specificity FM) | sequence-native FM | dtSFM-v3, BIIE ETH Zürich |
 | `clogp`, `molecular-weight` | Crippen cLogP, molecular weight | physicochemical baseline | RDKit |
 | `rowan-sqm`, `rowan-gnina`, `rowan-aevplig` | SQM (PM6-D3H4X/COSMO2), GNINA, AEV-PLIG | physics / docking / ML rescoring | via Rowan |
+| `rowan-boltz-2-{affinity,pbind,iptm}` | Boltz-2 hosted end to end (sequence + SMILES in, no GPU) | co-folding | via Rowan |
 | `interface-ncontacts`, `interface-ligburial` | protein-ligand contacts and ligand burial from the pose | interface geometry | `scripts/run_interface.py` (gemmi) |
 
 The confidence metrics cover the de-novo metric set used on protein binders (iPTM, pTM, pLDDT,
@@ -213,9 +214,14 @@ reference/experimental_reference_ground_truth.csv   id, is_binder, experimental_
 reference/system_reference.csv                       id, protein, ligand_name, sequence, smiles, source, source_url
 predictions/<method>_predictions.csv                 method, id, predicted_affinity
 reference/source_watermarks.json                     what the weekly watcher has already seen
-scripts/qc_dataset.py                                17 integrity checks, run on every PR
+reference/rowan_cofold_workflows.json                hosted run -> workflow id + credits charged
+scripts/score.py, scripts/make_figure.py             the statistics, and the figure
+scripts/methods.py                                   registry: every column, its producer, its category
+scripts/qc_dataset.py                                21 integrity checks, run on every PR
 scripts/check_sources.py                             the watcher: one Europe PMC query, no model
 scripts/append_paper.py                              the only thing that writes reference/
+scripts/run_rowan.py                                 pose-based rescoring (SQM/GNINA/AEV-PLIG)
+scripts/run_rowan_cofold.py                          hosted co-folding, no GPU, budget ledger
 scripts/update.py                                    the GPU+Rowan half, dry-run by default
 .claude/agents, .claude/skills                       the extract/verify agents and the skill
 ```
@@ -227,13 +233,12 @@ Every `predictions/*.csv` joins to the reference by `id` and is scored automatic
 The benchmark is small because the field is: de-novo designed proteins with a *measured*
 affinity for a small molecule are a few papers a year. The loop that grows it:
 
-| | what runs | trigger | cost |
-|---|---|---|---|
-| 1 | `weekly.yml` → `check_sources.py` — one Europe PMC query against a committed watermark, ranked 0–3, opens one issue | Monday 09:00 UTC | free |
-| 2 | **you**: `add-smallmol-paper` skill → extract, verify, `append_paper.py`, open a PR | manual | free |
-| 3 | `qc.yml` — 17 integrity checks, row-count floor from the PR base | the PR | free |
-| 4 | `rowan.yml` → `run_rowan_cofold.py` — hosted co-folding, no GPU | dispatch | credits |
-| 5 | `figures.yml` — re-score and redraw | predictions change | free |
+1. **`weekly`** opens an issue listing new candidate papers.
+2. **You** run the `add-smallmol-paper` skill — extract, verify, `append_paper.py` — and open a PR.
+3. **`qc`** checks the PR; you merge.
+4. **`rowan`** scores the new rows; **`figures`** redraws.
+
+See [GitHub Actions](#github-actions) for what each one does and what it costs.
 
 **Step 2 is deliberately not automated.** Extraction is a model reading a PDF, and the
 property that makes this set worth citing is that no model has ever written `reference/` —
@@ -261,20 +266,66 @@ gh workflow run rowan -f action=collect
 
 Or locally: `python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-systems 5`.
 
-That writes `rowan-cofold-{affinity,pbind,iptm}`, which are **separate columns from the
-local `boltz-2*` ones and must stay separate** — same model family, different deployment and
-MSA server. The GPU is still needed for the *pose-based* rescorers (SQM, GNINA, AEV-PLIG),
-which take a pose rather than a sequence; `scripts/update.py` drives that path.
+Columns are named `rowan-<model>-{affinity,pbind,iptm}`, and **the model is in the name
+deliberately**: `--model` is a dispatch input, so a fixed name would have let a Chai-1r run
+overwrite Boltz-2's numbers in place. They are also **separate from the local `boltz-2*`
+columns and must stay separate** — same model family, different deployment and MSA server.
 
-**Key safety.** `rowan.yml` is `workflow_dispatch`-only, so nothing spends unattended, and
-GitHub limits dispatch to write access. Fork pull requests never receive repository secrets,
-and no workflow here uses `pull_request_target`. Every run is capped twice — `max_credits`
-per Rowan workflow, `max_systems` per session — because Rowan's own cap cannot bound a
-session. The weekly job uses the conservative defaults and skips entirely when nothing is
-unscored.
+Measured cost is **9.1–9.4 credits per system**, so all 60 is roughly 560. Read it only
+from a finished workflow: `credits_charged` grows while a run is in flight, and an early
+read of 3.06 is how the first estimate came out three times too low.
 
-After appending, new rows are in no figure until they are scored: `qc_dataset.py` fails its
-"predictions cover exactly the reference ids" check, which is the reminder, not a bug.
+On the two systems scored so far, hosted Boltz-2 reproduces our local Boltz-2 closely —
+pK 5.81 vs 5.56 and 7.11 vs 7.44, iPTM within 0.004. That is a useful check on the hosted
+path and also the reason finishing this column is low value: **a model we have no local
+copy of is what the credits are for.** SQM, GNINA, AEV-PLIG and NESSO are already scored
+at full coverage by the pose-based path below, so they are not that either.
+
+The GPU is still needed for the *pose-based* rescorers (SQM, GNINA, AEV-PLIG), which take a
+pose rather than a sequence; `scripts/update.py` drives that path.
+
+After appending, new rows are in no figure until they are scored. `qc_dataset.py` reports
+partial coverage as a **warning** naming the method and the count — it does not fail, so a
+hosted run that is still landing does not hold the repo red. Ids that are *not* in the
+reference do fail: that is always a bug, never a run in flight.
+
+## GitHub Actions
+
+Six workflows. Only one can spend money.
+
+| workflow | trigger | does | cost |
+|---|---|---|---|
+| `ci` | push, PR | `ruff check scripts tests`, then `pytest` | free |
+| `qc` | PR touching `reference/`, `predictions/`, `qc_dataset.py` | 21 integrity checks; row-count floor read from the PR base branch | free |
+| `figures` | push touching `predictions/`, `reference/`, `score.py`, `make_figure.py` | re-score, redraw `figures/benchmark.png`, commit it | free |
+| `watch-sources` | `workflow_call`, dispatch | one Europe PMC query against a committed watermark; opens one issue. No model, no key, **cannot write `reference/`** | free |
+| `weekly` | Monday 09:00 UTC, dispatch | calls `watch-sources`, then **submits up to 5 hosted systems** | **~46 credits/week** |
+| `rowan` | dispatch only | submit or collect hosted co-folding, larger batches | credits |
+
+Public repo, so Actions minutes are free; the only real cost is Rowan credits.
+
+**What bounds the spending.** Three things, because the first two do not bound a session:
+
+- `--max-credits` caps one Rowan workflow. Rowan's own cap is per workflow, so this alone
+  bounds nothing larger.
+- `--max-systems` caps one run. Neither of these stops someone dispatching ten times.
+- `BUDGET_CREDITS` in `run_rowan_cofold.py` is a ceiling on the **cumulative** charge. It
+  reads the committed ledger in `reference/rowan_cofold_workflows.json` and refuses to
+  submit past it. A recorded workflow whose charge has not been collected yet counts at the
+  measured rate rather than as free, so an uncollected run is never invisible to it.
+
+**`weekly` does spend unattended** — about 5 systems, ~46 credits, every Monday, with
+nobody watching. That is deliberate and it is what `BUDGET_CREDITS` exists to bound. Set
+**Max credit overage** in the Rowan dashboard too; it defaults to unlimited, there is no
+billing API, and it is the only thing that can stop spend this repo does not know about.
+
+**Key safety.** The key lives in one repository secret and is never printed — the workflow
+logs its length, not its value. `rowan.yml` is `workflow_dispatch`-only, which GitHub
+restricts to write access. Fork pull requests never receive repository secrets, and no
+workflow here uses `pull_request_target`, the trigger that would hand a fork's code the
+key. Dispatch inputs are passed through the environment rather than interpolated into a
+shell command. `draft` defaults to **true**: the first run of any change validates the whole
+submission path, executes nothing and costs nothing.
 
 ## Reproduce
 

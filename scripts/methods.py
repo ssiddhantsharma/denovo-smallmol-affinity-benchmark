@@ -44,11 +44,32 @@ PRODUCERS: dict[str, str] = {
     "rowan-sqm": "run_rowan.py --submit (pose-based, needs a local co-fold)",
     "rowan-gnina": "run_rowan.py --submit (pose-based, needs a local co-fold)",
     "rowan-aevplig": "run_rowan.py --submit (pose-based, needs a local co-fold)",
-    # hosted end to end: sequence + SMILES in, no GPU
-    "rowan-cofold-affinity": "run_rowan_cofold.py --submit",
-    "rowan-cofold-pbind": "run_rowan_cofold.py --submit",
-    "rowan-cofold-iptm": "run_rowan_cofold.py --submit",
 }
+
+# Hosted co-folding through Rowan: sequence + SMILES in, no GPU, three columns
+# per model. The model is IN the column name because it has to be -- the script
+# takes --model and rowan.yml exposes it as a dispatch input, so a fixed
+# "rowan-cofold-iptm" would have let a Chai-1r run overwrite Boltz-2's numbers in
+# place, and the state file would have called those systems already done. Adding
+# a model to this tuple registers, categorises and names its three columns.
+#
+# These are NOT the local boltz-2* columns: different deployment, different MSA
+# server. Rowan's hosted Boltz-2 agrees with ours closely (pK 5.81 vs 5.56,
+# 7.11 vs 7.44, iPTM to within 0.004 on the two systems scored), which is a
+# useful reproducibility check and also the reason a hosted Boltz-2 adds little
+# as a METHOD. A model we have no local copy of is the one worth the credits.
+ROWAN_COFOLD_MODELS: tuple[str, ...] = ("boltz-2",)
+ROWAN_COFOLD_METRICS: dict[str, str] = {"affinity": "aff", "pbind": "aff", "iptm": "prox"}
+
+
+def rowan_cofold_columns(model: str) -> dict[str, str]:
+    """metric -> column name, for one hosted model."""
+    return {m: f"rowan-{model}-{m}" for m in ROWAN_COFOLD_METRICS}
+
+
+for _m in ROWAN_COFOLD_MODELS:
+    for _metric, _col in rowan_cofold_columns(_m).items():
+        PRODUCERS[_col] = f"run_rowan_cofold.py --submit --model {_m}"
 
 # What kind of method a column is. This lives here rather than in make_figure.py
 # because it was a second, parallel dict there: adding the three rowan-cofold
@@ -61,9 +82,7 @@ PRODUCERS: dict[str, str] = {
 CATEGORY: dict[str, str] = {
     "boltz-2": "aff", "boltz-2-pbind": "aff",
     "nesso-1": "aff", "nesso-1-pbind": "aff",
-    "rowan-cofold-affinity": "aff", "rowan-cofold-pbind": "aff",
     "boltz-2-iptm": "prox", "boltz-2-pae-min": "prox", "boltz-2-pae-mean": "prox",
-    "rowan-cofold-iptm": "prox",
     "protenix-iptm": "prox", "protenix-ligiptm": "prox", "protenix-gpde": "prox",
     "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
     "protenix-ptm": "prox", "protenix-plddt-binder": "prox",
@@ -73,12 +92,15 @@ CATEGORY: dict[str, str] = {
     "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock",
     "interface-ncontacts": "iface", "interface-ligburial": "iface",
 }
+for _m in ROWAN_COFOLD_MODELS:
+    for _metric, _col in rowan_cofold_columns(_m).items():
+        CATEGORY[_col] = ROWAN_COFOLD_METRICS[_metric]
 
 # Columns that are allowed to be absent: they are planned or optional, and their
 # absence is not a gap to report every time anyone asks what needs running.
-OPTIONAL: frozenset[str] = frozenset({
-    "rowan-cofold-affinity", "rowan-cofold-pbind", "rowan-cofold-iptm",
-})
+OPTIONAL: frozenset[str] = frozenset(
+    col for m in ROWAN_COFOLD_MODELS for col in rowan_cofold_columns(m).values()
+)
 
 
 def expected(include_optional: bool = True) -> list[str]:

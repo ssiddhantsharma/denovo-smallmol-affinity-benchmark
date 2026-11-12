@@ -21,8 +21,9 @@ What comes back per system (`CofoldingResult`):
 into them.** Those were produced locally, at a pinned version, with this repo's
 own MSA settings; Rowan's are a different deployment and a different MSA server.
 Scoring one against the other as if they were one method is the provenance error
-that makes a leaderboard quietly wrong, so every column written here is prefixed
-`rowan-cofold-`.
+that makes a leaderboard quietly wrong, so every column written here is named
+`rowan-<model>-<metric>` -- with the model in it, because --model is settable
+and a fixed name would let one model overwrite another's numbers in place.
 
 It spends credits, so it is dry-run by default and every spending path is capped:
 
@@ -38,6 +39,8 @@ import csv
 import json
 import os
 from pathlib import Path
+
+import methods
 
 ROOT = Path(__file__).resolve().parents[1]
 REF = ROOT / "reference" / "system_reference.csv"
@@ -62,11 +65,24 @@ STATE = ROOT / "reference" / "rowan_cofold_workflows.json"
 # spend this script does not know about.
 BUDGET_CREDITS = 800.0
 
-COLUMNS = {
-    "rowan-cofold-affinity": ("affinity", "higher = tighter (6 - pred_value)"),
-    "rowan-cofold-pbind": ("pbind", "higher = more likely a binder"),
-    "rowan-cofold-iptm": ("iptm", "higher = more confident interface"),
-}
+NOTE = {"affinity": "higher = tighter (6 - pred_value)",
+        "pbind": "higher = more likely a binder",
+        "iptm": "higher = more confident interface"}
+
+
+def slug(model: str) -> str:
+    """Rowan's model id (boltz_2, chai_1r) -> this repo's column spelling."""
+    return model.replace("_", "-")
+
+
+def columns(model: str) -> dict[str, str]:
+    return methods.rowan_cofold_columns(slug(model))
+
+
+def key(model: str, sid: str) -> str:
+    """State is keyed by model AND system. Keyed by system alone, scoring the
+    same system under a second model was reported as 'already submitted'."""
+    return f"{slug(model)}:{sid}"
 
 
 def rows() -> list[dict]:
@@ -74,12 +90,18 @@ def rows() -> list[dict]:
         return list(csv.DictReader(fh))
 
 
-def already_scored() -> set[str]:
-    path = PRED / "rowan-cofold-affinity_predictions.csv"
+def already_scored(model: str) -> set[str]:
+    path = PRED / f"{columns(model)['affinity']}_predictions.csv"
     if not path.is_file():
         return set()
     with path.open() as fh:
         return {r["id"] for r in csv.DictReader(fh)}
+
+
+def _split(k: str) -> tuple[str, str]:
+    """state key -> (model slug, system id). A key with no model is from before
+    the state was model-scoped, and everything written then was boltz_2."""
+    return tuple(k.split(":", 1)) if ":" in k else ("boltz-2", k)
 
 
 def _state() -> dict:
@@ -118,11 +140,11 @@ def parse_result(data) -> dict[str, float]:
     got = {}
     if aff.get("pred_value") is not None:
         # repo convention: pK = 6 - affinity_pred_value
-        got["rowan-cofold-affinity"] = 6.0 - float(aff["pred_value"])
+        got["affinity"] = 6.0 - float(aff["pred_value"])
     if aff.get("probability_binary") is not None:
-        got["rowan-cofold-pbind"] = float(aff["probability_binary"])
+        got["pbind"] = float(aff["probability_binary"])
     if sco.get("iptm") is not None:
-        got["rowan-cofold-iptm"] = float(sco["iptm"])
+        got["iptm"] = float(sco["iptm"])
     return got
 
 
@@ -136,8 +158,9 @@ def submit(todo: list[dict], model: str, max_credits: int, draft: bool) -> None:
 
     state = _state()
     for r in todo:
-        if r["id"] in state:
-            print(f"  already submitted: {r['id']} ({_uuid_of(state[r['id']])})")
+        k = key(model, r["id"])
+        if k in state:
+            print(f"  already submitted: {k} ({_uuid_of(state[k])})")
             continue
         if not draft and _ledger(state) + 9.2 > BUDGET_CREDITS:
             print(f"\n  STOPPING at the repo budget: {_ledger(state):.0f} of "
@@ -163,7 +186,7 @@ def submit(todo: list[dict], model: str, max_credits: int, draft: bool) -> None:
             # it would make the next REAL run skip this system as "already
             # submitted" and silently leave it unscored.
             continue
-        state[r["id"]] = {"uuid": uuid, "credits": None}
+        state[k] = {"uuid": uuid, "credits": None}
         _save_state(state)        # after each one: a crash must not lose the ids
     if draft:
         print("\n[draft] nothing recorded: a draft has no result to collect, and "
@@ -179,34 +202,33 @@ def collect(wait: bool) -> None:
     if not state:
         print(f"nothing submitted (no {STATE.relative_to(ROOT)})")
         return
-    out: dict[str, dict[str, float]] = {c: {} for c in COLUMNS}
+    out: dict[str, dict[str, float]] = {}
     pending, failed, charged = [], {}, {}
-    for sid, uuid in state.items():
+    for k, uuid in state.items():
+        model, sid = _split(k)
         try:
             wf = rowan.retrieve_workflow(_uuid_of(uuid))
             if wait:
                 wf.wait_for_result()
-            charged[sid] = float(getattr(wf, "credits_charged", 0) or 0)
+            charged[k] = float(getattr(wf, "credits_charged", 0) or 0)
             if not getattr(wf, "is_finished", lambda: False)():
-                pending.append(sid)
+                pending.append(k)
                 continue
-            for col, val in parse_result(wf.data).items():
-                out[col][sid] = val
+            cols = methods.rowan_cofold_columns(model)
+            for metric, val in parse_result(wf.data).items():
+                out.setdefault(cols[metric], {})[sid] = val
         except Exception as exc:                      # noqa: BLE001 - one bad id must not lose the batch
-            failed[sid] = f"{type(exc).__name__}: {exc}"
+            failed[k] = f"{type(exc).__name__}: {exc}"
 
-    for sid, c in charged.items():
+    for k, c in charged.items():
         # also upgrades the legacy bare-uuid entries written before the ledger
-        state[sid] = {"uuid": _uuid_of(state[sid]), "credits": c}
+        state[k] = {"uuid": _uuid_of(state[k]), "credits": c}
     if charged:
         _save_state(state)
         print(f"  spend recorded: {_ledger(state):.0f} of {BUDGET_CREDITS:.0f} credits")
 
-    for col, (_, note) in COLUMNS.items():
-        vals = out[col]
-        if not vals:
-            print(f"  {col}: nothing returned yet")
-            continue
+    for col, vals in sorted(out.items()):
+        note = NOTE[col.rsplit("-", 1)[1]]
         path = PRED / f"{col}_predictions.csv"
         with path.open("w", newline="") as fh:
             w = csv.writer(fh)
@@ -238,8 +260,9 @@ def main() -> int:
                     help="validate the full submission path without executing or spending")
     a = ap.parse_args()
 
-    todo = [r for r in rows() if r["id"] not in already_scored()]
-    print(f"{len(rows())} reference systems | {len(todo)} without a rowan-cofold score")
+    todo = [r for r in rows() if r["id"] not in already_scored(a.model)]
+    print(f"{len(rows())} reference systems | {len(todo)} without a "
+          f"{slug(a.model)} hosted score")
     if a.collect:
         collect(a.wait)
         return 0

@@ -323,9 +323,36 @@ REAL_PAYLOAD = {  # shape returned by the API for 01_apx1049__apixaban
 
 def test_parse_result_reads_dict_payload():
     got = _rowan().parse_result(REAL_PAYLOAD)
-    assert got["rowan-cofold-affinity"] == pytest.approx(7.114)
-    assert got["rowan-cofold-pbind"] == pytest.approx(0.921)
-    assert got["rowan-cofold-iptm"] == pytest.approx(0.98)
+    assert got["affinity"] == pytest.approx(7.114)
+    assert got["pbind"] == pytest.approx(0.921)
+    assert got["iptm"] == pytest.approx(0.98)
+
+
+def test_hosted_columns_and_state_are_scoped_by_model():
+    """--model is a dispatch input in rowan.yml. With a fixed column name a
+    Chai-1r run would have overwritten Boltz-2's numbers in place, and the state
+    file would have reported those systems already submitted."""
+    r = _rowan()
+    assert r.columns("boltz_2") != r.columns("chai_1r")
+    assert set(r.columns("boltz_2").values()).isdisjoint(r.columns("chai_1r").values())
+    assert r.key("boltz_2", "x") != r.key("chai_1r", "x")
+    # underscores in Rowan's model ids become hyphens in column names
+    assert r.columns("chai_1r")["iptm"] == "rowan-chai-1r-iptm"
+
+
+def test_legacy_state_keys_are_read_as_boltz2():
+    """Keys written before the state was model-scoped are bare system ids, and
+    everything submitted then was boltz_2."""
+    assert _rowan()._split("00_x__y") == ("boltz-2", "00_x__y")
+    assert _rowan()._split("chai-1r:00_x__y") == ("chai-1r", "00_x__y")
+
+
+def test_hosted_columns_never_collide_with_local_ones():
+    """The hosted Boltz-2 is a different deployment with a different MSA server;
+    merging it into the local boltz-2 column is the provenance error."""
+    m = _load("scripts/methods.py", "methods")
+    hosted = {c for c in m.PRODUCERS if c.startswith("rowan-")}
+    assert "boltz-2" not in hosted and "boltz-2-iptm" not in hosted
 
 
 def test_parse_result_unwraps_cofolding_results():
@@ -377,7 +404,10 @@ def test_every_registered_method_has_a_figure_category():
     the category map crashed the figures workflow with a bare KeyError -- the
     two dicts are now one, and this is what keeps them one."""
     m = _load("scripts/methods.py", "methods")
-    assert not set(m.PRODUCERS) - set(m.CATEGORY)
+    assert not set(m.PRODUCERS) - set(m.CATEGORY), "registered but uncategorised"
+    # the reverse too: a category for a column that no longer exists is dead
+    # weight that outlives the rename it was left behind by
+    assert not set(m.CATEGORY) - set(m.PRODUCERS), "categorised but unregistered"
 
 
 def test_figure_categories_all_have_a_colour():

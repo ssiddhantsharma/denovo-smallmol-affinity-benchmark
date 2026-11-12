@@ -69,7 +69,7 @@ def absent(covered: dict[str, set[str]]) -> list[str]:
 
     These are invisible to `missing()`, which can only compare files that exist.
     That is how this script once reported "nothing to update" while three
-    rowan-cofold columns had never been produced.
+    hosted co-folding columns had never been produced.
     """
     return [m for m in methods.expected() if m not in covered]
 
