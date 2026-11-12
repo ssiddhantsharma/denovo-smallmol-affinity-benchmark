@@ -8,6 +8,7 @@ bootstrap CIs. The leave-one-out combination is its own bar. Stats: score.py.
 from pathlib import Path
 
 import matplotlib
+import methods
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -22,15 +23,8 @@ from score import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-CAT = {"boltz-2": "aff", "boltz-2-pbind": "aff", "nesso-1": "aff", "nesso-1-pbind": "aff",
-       "boltz-2-iptm": "prox", "boltz-2-pae-min": "prox", "boltz-2-pae-mean": "prox",
-       "protenix-iptm": "prox", "protenix-ligiptm": "prox", "protenix-gpde": "prox",
-       "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
-       "protenix-ptm": "prox", "protenix-plddt-binder": "prox", "protenix-plddt-ligand": "prox",
-       "clogp": "base", "molecular-weight": "base", "combination": "combo",
-       "dtsfm-cosine": "seq",
-       "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock",
-       "interface-ncontacts": "iface", "interface-ligburial": "iface"}
+# categories come from the registry; only their presentation is decided here
+CAT = {**methods.CATEGORY, "combination": "combo"}
 COL = {"aff": "#35617a", "prox": "#c08a4a", "base": "#cbc3b8", "combo": "#8a5a72", "seq": "#7B4FA0",
        "phys": "#2e8b6b", "dock": "#a0522d", "iface": "#5a7d8c"}
 REF, WHISK = "#8f8880", "#9b938a"
@@ -89,15 +83,26 @@ def stats(rows, methods):
     # Pooled Spearman is omitted on purpose: across the set's many ligands it is confounded by
     # ligand composition (cLogP "wins" as an artifact), so only the composition-controlled axes are
     # shown. score.py still prints the pooled numbers for transparency.
-    wlig, spec = [], []
+    wlig, spec, partial = [], [], []
     for m in methods:
         sgn = -1 if m in LOWER_BETTER else 1
+        scored = [r for r in rows if r.get(m) is not None]
+        # Partial coverage is normal -- a hosted run lands incrementally, and the
+        # n behind each bar is what makes those bars honest to compare. What is
+        # NOT drawable is a statistic that does not exist: AUROC needs both
+        # classes, so a method that has so far scored only binders has none.
+        # Those are named on stdout instead of being silently absent.
+        if len({r["is_binder"] for r in scored}) < 2:
+            partial.append(f"{m} ({len(scored)}/{len(rows)}, one class only)")
+            continue
         med, per, ng, npairs = within_ligand_rho(rows, m)
         if med is not None:
             wlig.append((PRETTY.get(m, m), *_wlig_ci(per, ng), CAT[m], f"{ng} lig / {npairs}"))
-        sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in rows if r.get(m) is not None], strict=True)
+        sx, sl = zip(*[(sgn * r[m], r["is_binder"]) for r in scored], strict=True)
         spec.append((PRETTY.get(m, m), auroc(list(sx), list(sl)),
                      *bootstrap_ci(list(sx), list(sl), auroc), CAT[m], f"{len(sx)}"))
+    if partial:
+        print(f"not in the figure, scored on only some systems: {', '.join(partial)}")
     (_, _), (sp, sy) = combine_loo(rows)
     spec.append(("combination", auroc(sp, sy), *bootstrap_ci(sp, sy, auroc), "combo", f"{len(sy)}"))
     return wlig, spec, not_separable(rows, methods)

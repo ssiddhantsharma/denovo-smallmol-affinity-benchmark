@@ -139,6 +139,12 @@ def main(min_rows: int) -> int:
     try:
         import methods
 
+        # a registered method with no category crashes make_figure.py with a
+        # bare KeyError in CI; catch it here, where the message says what to add
+        uncat = sorted(set(methods.PRODUCERS) - set(methods.CATEGORY))
+        check("every registered method has a figure category", not uncat,
+              f"add to methods.CATEGORY: {uncat[:4]}")
+
         stems = {p.stem.replace("_predictions", "") for p in pred_files}
         unregistered = sorted(stems - set(methods.PRODUCERS))
         check("every predictions file is in the method registry", not unregistered,

@@ -50,6 +50,30 @@ PRODUCERS: dict[str, str] = {
     "rowan-cofold-iptm": "run_rowan_cofold.py --submit",
 }
 
+# What kind of method a column is. This lives here rather than in make_figure.py
+# because it was a second, parallel dict there: adding the three rowan-cofold
+# columns to the registry left the figure's map untouched and the figure crashed
+# with a bare KeyError in CI. One registry, one place to add a method.
+#   aff   dedicated affinity head        prox   structural proxy
+#   base  trivial baseline               seq    sequence-native FM
+#   phys  physics (SQM)                  dock   docking / ML rescore
+#   iface interface geometry             combo  combination (LOO)
+CATEGORY: dict[str, str] = {
+    "boltz-2": "aff", "boltz-2-pbind": "aff",
+    "nesso-1": "aff", "nesso-1-pbind": "aff",
+    "rowan-cofold-affinity": "aff", "rowan-cofold-pbind": "aff",
+    "boltz-2-iptm": "prox", "boltz-2-pae-min": "prox", "boltz-2-pae-mean": "prox",
+    "rowan-cofold-iptm": "prox",
+    "protenix-iptm": "prox", "protenix-ligiptm": "prox", "protenix-gpde": "prox",
+    "protenix-ranking": "prox", "protenix-pae-min": "prox", "protenix-pae-mean": "prox",
+    "protenix-ptm": "prox", "protenix-plddt-binder": "prox",
+    "protenix-plddt-ligand": "prox",
+    "clogp": "base", "molecular-weight": "base",
+    "dtsfm-cosine": "seq",
+    "rowan-sqm": "phys", "rowan-gnina": "dock", "rowan-aevplig": "dock",
+    "interface-ncontacts": "iface", "interface-ligburial": "iface",
+}
+
 # Columns that are allowed to be absent: they are planned or optional, and their
 # absence is not a gap to report every time anyone asks what needs running.
 OPTIONAL: frozenset[str] = frozenset({

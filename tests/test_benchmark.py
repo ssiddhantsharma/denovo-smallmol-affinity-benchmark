@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _load(relpath: str, name: str):
     """The scripts/ files are standalone CLIs, not an importable package, so they
-    are loaded by path."""
+    are loaded by path. They import each other by bare name (`import methods`),
+    which works when run as `python scripts/x.py` because that puts scripts/ on
+    sys.path; loading by path does not, so put it there."""
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
     spec = importlib.util.spec_from_file_location(name, ROOT / relpath)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -366,3 +370,17 @@ def test_qc_warns_but_passes_on_partial_coverage():
     assert out.returncode == 0, out.stdout
     if "pending)" in out.stdout:
         assert "WARN" in out.stdout
+
+
+def test_every_registered_method_has_a_figure_category():
+    """make_figure.py indexes CAT[m] directly. A registered method missing from
+    the category map crashed the figures workflow with a bare KeyError -- the
+    two dicts are now one, and this is what keeps them one."""
+    m = _load("scripts/methods.py", "methods")
+    assert not set(m.PRODUCERS) - set(m.CATEGORY)
+
+
+def test_figure_categories_all_have_a_colour():
+    fig = _load("scripts/make_figure.py", "make_figure")
+    assert not set(fig.CAT.values()) - set(fig.COL)
+    assert not set(fig.CAT.values()) - set(fig.LABEL)
