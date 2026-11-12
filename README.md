@@ -24,7 +24,7 @@ one AUROC over all 60. Cofolder affinity heads are converted to `pK = 6 - affini
 ![benchmark](figures/benchmark.png)
 
 <!-- figure-stamp -->
-*Figure regenerated **2026-11-12 07:39 UTC** from 60 systems, 25 methods drawn.*
+*Figure regenerated **2026-11-12 12:05 UTC** from 60 systems, 25 methods drawn.*
 <br>*Not drawn (no AUROC until both classes are scored): `rowan-boltz-2-affinity`, `rowan-boltz-2-iptm`, `rowan-boltz-2-pbind`.*
 <!-- /figure-stamp -->
 
@@ -64,13 +64,11 @@ transparency.
 | rank pKd, within-ligand (median Spearman) | +0.70 | n/a (constant per ligand) | not defined |
 | tell right from wrong ligand (AUROC) | 0.91 | 0.53 | 0.84 |
 
-> **Corrected 2026-11-11.** The rank statistics broke ties by row order, which the
-> `1 - 6*sum(d^2)/(n(n^2-1))` Spearman shortcut is not valid for. Five metrics carry ties
-> (`interface-ligburial` 42 of 60, `interface-ncontacts`, `clogp`, `molecular-weight`,
-> `rowan-aevplig`), so their numbers were wrong — most visibly `interface-ligburial`'s
-> within-ligand rho, reported as +0.10 and actually **+0.32**. Ranks are midranks now and
-> Spearman is Pearson-on-ranks, matching scipy to 1e-16 on tie-dense input. Nine of 68
-> point estimates moved; no conclusion in this README changed.
+> **Corrected 2026-11-11.** The rank statistics broke ties by row order, using a Spearman
+> shortcut that is not valid with ties. Five metrics carry them, so their numbers were wrong —
+> most visibly `interface-ligburial`'s within-ligand rho, published as +0.10 and actually
+> **+0.32**. Ranks are midranks now, matching scipy to 1e-16. Nine of 68 point estimates
+> moved; no conclusion here changed.
 
 ## Caveats
 
@@ -162,28 +160,23 @@ re-derived and were not re-run. Those columns are still from their original sing
 
 ## ipDAE: implemented, not yet run
 
-`scripts/run_ipdae.py` ports BindCraft2's `i_pDAE` to a protein-ligand interface and writes
-`boltz-2-ipdae`. The math is unit-tested; **it has not been run against the real folds**, because
-`_work/` is gitignored and the Boltz-2 outputs live on the box that did the folding. Nothing in the
-results above includes it. Two things worth knowing before reading anything into it when it does
-run:
+`scripts/run_ipdae.py` ports BindCraft2's `i_pDAE` to a protein-ligand interface. The math is
+unit-tested; **it has not been run against the real folds**, because the Boltz-2 outputs live on
+the box that did the folding. Nothing above includes it.
 
-- **Contact is heavy-atom at 4.5 Å, not CA-CA at 8 Å.** A ligand has no CA. This matches the
-  definition `run_interface.py` already uses, so the metrics agree on what the interface is.
-- **d0 saturates, so ipDAE is less novel here than on a protein interface.** Its partner-count
-  scale only exceeds 1.0 at **27+ partners** (verified numerically, pinned by a test). A ligand
-  atom never contacts 27 residues, so d0 pins to 1.0 and the score reduces to the max over anchors
-  of mean `1/(1+PAE²)`. That is not a monotone transform of mean interface PAE -- the nonlinearity
-  comes before the average and the max picks one anchor -- but it reads the same matrix as
-  `boltz-2-pae-{min,mean}`, which are already here at within-ligand +0.62 / +0.50. Given that 18 of
-  21 metrics are already not separable from the top one, expect ipDAE to land inside that same
-  blob rather than to add an independent axis. `--report` prints the measured fraction of anchors
-  with d0 > 1 so this is checked, not assumed.
+Expect it to add little here. Its partner-count scale `d0` only exceeds 1.0 at **27+ partners**
+(verified numerically, pinned by a test), and a ligand atom never contacts 27 residues — so `d0`
+pins to 1.0 and the score reduces to the max over anchors of mean `1/(1+PAE²)`. That is not a
+monotone transform of mean interface PAE, but it reads the same matrix as `boltz-2-pae-{min,mean}`,
+already here at within-ligand +0.62 / +0.50. Given that 18 of 21 metrics are not separable from the
+top one, it should land in the same blob rather than add an axis. `--report` prints the measured
+fraction of anchors with `d0 > 1`, so this is checked rather than assumed.
 
-The script refuses to guess: it fails loudly if the structure's residue count disagrees with the
-sequence, or if the PAE token count is not `len(protein) + n_ligand_heavy_atoms`. Boltz-2's PAE is
-paired with Boltz-2's own structure -- crossing it with the Protenix pose that `run_interface.py`
-reads would score one model's confidence against another model's coordinates.
+Contact is heavy-atom at 4.5 Å, not CA-CA at 8 Å — a ligand has no CA — matching what
+`run_interface.py` already uses. The script fails loudly if the structure's residue count disagrees
+with the sequence, or if the PAE token count is not `len(protein) + n_ligand_heavy_atoms`: Boltz-2's
+PAE is paired with Boltz-2's own structure, and crossing it with the Protenix pose would score one
+model's confidence against another model's coordinates.
 
 ## Rowan physics / docking rescoring
 
@@ -215,175 +208,26 @@ scores all 60.
 ## Layout
 
 ```
+reference/system_reference.csv                      id, protein, ligand_name, sequence, smiles, source, source_url
 reference/experimental_reference_ground_truth.csv   id, is_binder, experimental_pKD
-reference/system_reference.csv                       id, protein, ligand_name, sequence, smiles, source, source_url
-predictions/<method>_predictions.csv                 method, id, predicted_affinity
-reference/source_watermarks.json                     what the weekly watcher has already seen
-reference/rowan_cofold_workflows.json                hosted run -> workflow id + credits charged
-scripts/score.py, scripts/make_figure.py             the statistics, and the figure
-scripts/methods.py                                   registry: every column, its producer, its category
-scripts/qc_dataset.py                                21 integrity checks, run on every PR
-scripts/check_sources.py                             the watcher: one Europe PMC query, no model
-scripts/append_paper.py                              the only thing that writes reference/
-scripts/run_rowan.py                                 pose-based rescoring (SQM/GNINA/AEV-PLIG)
-scripts/run_rowan_cofold.py                          hosted co-folding, no GPU, budget ledger
-scripts/ingest_paper.py                              unattended extract+verify -> a PR, never main
-scripts/gpu_autoscore.sh                             cron for the GPU box (pull-based, not a runner)
-scripts/update.py                                    the GPU+Rowan half, dry-run by default
-.claude/agents, .claude/skills                       the extract/verify agents and the skill
+predictions/<method>_predictions.csv                method, id, predicted_affinity
+scripts/score.py, scripts/make_figure.py            the statistics, and the figure
+scripts/methods.py                                  registry: every column, its producer, its category
+scripts/append_paper.py                             the only thing that writes reference/
 ```
 
-Every `predictions/*.csv` joins to the reference by `id` and is scored automatically.
+Every `predictions/*.csv` joins to the reference by `id` and is scored automatically. Adding a
+column means adding a file and registering it; `scripts/qc_dataset.py` runs 21 integrity checks on
+every PR.
 
-## Growing the set
+## Adding to it
 
-The benchmark is small because the field is: de-novo designed proteins with a *measured*
-affinity for a small molecule are a few papers a year. The loop that grows it:
+The set grows by a few papers a year. A weekly job searches Europe PMC, drafts an extraction and
+opens a pull request; a person reviews and merges it, because a wrong row is worse than a missing
+one. `scripts/append_paper.py` is the only thing that writes `reference/`.
 
-| | step | who | cost |
-|---|---|---|---|
-| 1 | `weekly` queries Europe PMC against a committed watermark, opens one ranked issue, and names the best new candidate | automatic, Monday | free |
-| 2 | `ingest` extracts and verifies that candidate and **opens a PR** | automatic | API tokens |
-| 3 | **review the PR** and merge | **you** | free |
-| 4 | `weekly` collects last week's hosted runs and submits the new rows | automatic, Monday | ~46 credits |
-| 4b | `gpu_autoscore.sh` on the GPU box scores the other 24 columns | cron on bizon | GPU |
-| 5 | `figures` re-scores, redraws, and stamps the README with the date | automatic | free |
-
-**Step 3 is the one gate, and it stays.** `ingest` runs a model over the paper and writes
-a candidate CSV; `append_paper.py` is still the only thing that writes `reference/`, and
-the job **cannot push to main** — it pushes a branch and opens a PR that `qc` checks. A
-wrong row is worse than a missing one, because nobody can tell which rows to distrust, so
-a person reads the diff. What the automation removes is the fetching and transcribing,
-not the judgement.
-
-**Expect most ingests to find nothing.** Europe PMC serves open-access full text; most of
-this field's sequences sit in a PDF supplement behind a paywall. For a closed paper the
-extractor correctly returns zero rows and no PR is opened. That is the design.
-
-**A merged row is not a scored row — but far less of this needs a GPU than it looks.**
-Of the 27 columns, **11 are GPU-only**:
-
-- **`protenix-*` (9).** Rowan hosts `boltz_2`, `boltz_2_1`, `openfold_3`, `chai_1r` and
-  `esmfold_2`. It does not host Protenix, and nothing else does either.
-- **`boltz-2-pae-{min,mean}` (2)**, and ipDAE with them. These need the full
-  residue-residue PAE matrix. A Rowan co-folding result carries `lddt`, `ptm`, `iptm` and
-  `confidence_score` — no PAE — so they cannot come from there.
-
-Everything else can run without one. `clogp` and `molecular-weight` are RDKit;
-`dtsfm-cosine` is a sequence encoder that runs on CPU; `nesso-1*` has a hosted Rowan
-workflow; `interface-ncontacts` and `interface-ligburial` are gemmi over a pose, and
-Rowan's co-folding returns a downloadable pose (`predicted_structure_uuid`), so they need
-a *structure*, not a *GPU*. The local `boltz-2`, `boltz-2-iptm` and `boltz-2-pbind` have
-a hosted equivalent already, kept as separate `rowan-boltz-2-*` columns for provenance.
-
-So the GPU box is needed for Protenix and for anything derived from a PAE matrix. For
-those, hosted runners have none, and a *self-hosted* runner on a public repo would let any
-fork's pull request execute code on that machine — so there is none.
-`scripts/gpu_autoscore.sh` inverts it: a cron **on the GPU box** pulls main, runs
-`update.py --cofold`, runs QC, and pushes. Nothing inbound is exposed and no runner token
-exists. Install it there, not in CI:
-
-```
-# on the GPU box, crontab -e
-30 10 * * 1  /path/to/repo/scripts/gpu_autoscore.sh >> ~/autoscore.log 2>&1
-```
-
-See [GitHub Actions](#github-actions) for what each workflow does and what it costs.
-
-**Step 2 is deliberately not automated.** Extraction is a model reading a PDF, and the
-property that makes this set worth citing is that no model has ever written `reference/` —
-only `append_paper.py` does. A wrong row is worse than a missing one, because nobody can
-tell which rows to distrust. So the chain stops at a PR and a human merges; the weekly job
-only *scores* rows that a human already merged.
-
-**The query favours precision.** `"de novo" AND "small molecule"` is dominated by the
-opposite problem — designing a *drug* against a natural protein — at about 2 useful hits in
-23. Requiring the designed thing to be the protein gives 5 hits over three years of which 2
-are real; adding biosensor terms for recall brought back SPR instruments and imprinted
-polymers. Recall is the weak side on purpose: treat the issue as a reading list.
-
-### Scoring
-
-No GPU needed. Rowan's co-folding takes a sequence and a SMILES, folds server-side and
-returns Boltz-2's affinity head with it:
-
-```
-gh secret set ROWAN_API_KEY                                     # once
-gh workflow run rowan                                           # draft: validates, free
-gh workflow run rowan -f draft=false -f max_systems=2 -f max_credits=50
-gh workflow run rowan -f action=collect
-```
-
-Or locally: `python scripts/run_rowan_cofold.py --submit --max-credits 50 --max-systems 5`.
-
-Columns are named `rowan-<model>-{affinity,pbind,iptm}`, and **the model is in the name
-deliberately**: `--model` is a dispatch input, so a fixed name would have let a Chai-1r run
-overwrite Boltz-2's numbers in place. They are also **separate from the local `boltz-2*`
-columns and must stay separate** — same model family, different deployment and MSA server.
-
-Measured cost is **9.1–9.4 credits per system**, so all 60 is roughly 560. Read it only
-from a finished workflow: `credits_charged` grows while a run is in flight, and an early
-read of 3.06 is how the first estimate came out three times too low.
-
-On the two systems scored so far, hosted Boltz-2 reproduces our local Boltz-2 closely —
-pK 5.81 vs 5.56 and 7.11 vs 7.44, iPTM within 0.004. That is a useful check on the hosted
-path and also the reason finishing this column is low value: **a model we have no local
-copy of is what the credits are for.** SQM, GNINA, AEV-PLIG and NESSO are already scored
-at full coverage by the pose-based path below, so they are not that either.
-
-The GPU is still needed for the *pose-based* rescorers (SQM, GNINA, AEV-PLIG), which take a
-pose rather than a sequence; `scripts/update.py` drives that path.
-
-After appending, new rows are in no figure until they are scored. `qc_dataset.py` reports
-partial coverage as a **warning** naming the method and the count — it does not fail, so a
-hosted run that is still landing does not hold the repo red. Ids that are *not* in the
-reference do fail: that is always a bug, never a run in flight.
-
-## GitHub Actions
-
-Six workflows. Only one can spend money.
-
-| workflow | trigger | does | cost |
-|---|---|---|---|
-| `ci` | push, PR | `ruff check scripts tests`, then `pytest` | free |
-| `qc` | PR touching `reference/`, `predictions/`, `qc_dataset.py` | 21 integrity checks; row-count floor read from the PR base branch | free |
-| `figures` | push touching `predictions/`, `reference/`, `score.py`, `make_figure.py` | re-score, redraw `figures/benchmark.png`, commit it | free |
-| `watch-sources` | `workflow_call`, dispatch | one Europe PMC query against a committed watermark; opens one issue. No model, no key, **cannot write `reference/`** | free |
-| `ingest` | called by `weekly`, dispatch | extracts + verifies one paper and **opens a PR**; cannot push to main; skips cleanly without `ANTHROPIC_API_KEY` | API tokens |
-| `weekly` | Monday 09:00 UTC, dispatch | `watch-sources` → `ingest` the best candidate → collect finished Rowan runs → submit new rows | **~46 credits/week** |
-| `rowan` | dispatch only | submit or collect hosted co-folding, larger batches | credits |
-
-Public repo, so Actions minutes are free; the only real cost is Rowan credits.
-
-**What bounds the spending.** Three things, because the first two do not bound a session:
-
-- `--max-credits` caps one Rowan workflow. Rowan's own cap is per workflow, so this alone
-  bounds nothing larger.
-- `--max-systems` caps one run. Neither of these stops someone dispatching ten times.
-- `BUDGET_CREDITS` in `run_rowan_cofold.py` is a ceiling on the **cumulative** charge. It
-  reads the committed ledger in `reference/rowan_cofold_workflows.json` and refuses to
-  submit past it. A recorded workflow whose charge has not been collected yet counts at the
-  measured rate rather than as free, so an uncollected run is never invisible to it.
-
-**The Monday run does spend**, up to 5 systems (~46 credits) plus the ingest's API
-tokens. Dispatch `weekly -f score=false` to watch without scoring. `BUDGET_CREDITS` is
-what bounds it over time: at 5 systems a week the 800-credit ceiling is about four months,
-after which the submit step refuses until someone raises it deliberately. Set **Max credit
-overage** in the Rowan dashboard too; it defaults to unlimited, there is no billing API,
-and it is the only thing that can bound spend this repo does not know about.
-
-**Collect runs before submit**, because a Rowan workflow finishes minutes to hours after
-submission — the run that submits cannot also collect. Monday's collect turns last
-Monday's submissions into predictions, and that push is what triggers `figures`. Without
-it the loop would submit forever and never produce a number.
-
-**Key safety.** The key lives in one repository secret and is never printed — the workflow
-logs its length, not its value. `rowan.yml` is `workflow_dispatch`-only, which GitHub
-restricts to write access. Fork pull requests never receive repository secrets, and no
-workflow here uses `pull_request_target`, the trigger that would hand a fork's code the
-key. Dispatch inputs are passed through the environment rather than interpolated into a
-shell command. `draft` defaults to **true**: the first run of any change validates the whole
-submission path, executes nothing and costs nothing.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the ingest loop, how to score a new row (hosted on
+Rowan, or on a GPU for the 11 columns that need one), the workflows and what bounds their spending.
 
 ## Reproduce
 
