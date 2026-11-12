@@ -50,6 +50,18 @@ PRED = ROOT / "predictions"
 STATE = ROOT / "reference" / "rowan_cofold_workflows.json"
 
 # column -> how to pull it out of a CofoldingResult, and which way is better
+# A ceiling on everything this script may spend, enforced against charges
+# recorded in the committed state file. --max-credits caps ONE workflow and
+# --max-systems caps ONE run; neither stops someone dispatching ten times. This
+# does, and it persists because the ledger is committed. Measured cost is
+# 9.1-9.4 credits per system (Boltz-2 with an MSA search), so a full 60-system
+# pass is ~560. 800 leaves room for retries and still bounds a runaway.
+#
+# NOT a substitute for Rowan's own cap: set "Max credit overage" in the Rowan
+# dashboard too, which defaults to unlimited and is the only thing that can stop
+# spend this script does not know about.
+BUDGET_CREDITS = 800.0
+
 COLUMNS = {
     "rowan-cofold-affinity": ("affinity", "higher = tighter (6 - pred_value)"),
     "rowan-cofold-pbind": ("pbind", "higher = more likely a binder"),
@@ -74,6 +86,46 @@ def _state() -> dict:
     return json.loads(STATE.read_text()) if STATE.is_file() else {}
 
 
+def _uuid_of(v) -> str:
+    """State entries are {"uuid", "credits"}; early ones were a bare uuid string."""
+    return v["uuid"] if isinstance(v, dict) else v
+
+
+def _ledger(state: dict) -> float:
+    """Credits recorded as charged. An entry with no recorded charge is counted
+    at the measured rate rather than as free, so an uncollected run still
+    consumes budget."""
+    return sum(float((v.get("credits") if isinstance(v, dict) else None) or 9.2)
+               for v in state.values())
+
+
+def parse_result(data) -> dict[str, float]:
+    """Pull the three scored columns out of a finished workflow's payload.
+
+    The API returns a plain dict, not the pydantic CofoldingResult the SDK's type
+    hints suggest. The first version read it with getattr, which silently yielded
+    None for every field and wrote an empty file while reporting success -- hence
+    this is a named function with tests rather than a few lines inside the fetch
+    loop.
+    """
+    if not isinstance(data, dict):
+        return {}
+    cof = (data.get("cofolding_results") or [data])[0]
+    if not isinstance(cof, dict):
+        return {}
+    aff = cof.get("affinity_score") or {}
+    sco = cof.get("scores") or {}
+    got = {}
+    if aff.get("pred_value") is not None:
+        # repo convention: pK = 6 - affinity_pred_value
+        got["rowan-cofold-affinity"] = 6.0 - float(aff["pred_value"])
+    if aff.get("probability_binary") is not None:
+        got["rowan-cofold-pbind"] = float(aff["probability_binary"])
+    if sco.get("iptm") is not None:
+        got["rowan-cofold-iptm"] = float(sco["iptm"])
+    return got
+
+
 def _save_state(d: dict) -> None:
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps(d, indent=2) + "\n")
@@ -85,8 +137,13 @@ def submit(todo: list[dict], model: str, max_credits: int, draft: bool) -> None:
     state = _state()
     for r in todo:
         if r["id"] in state:
-            print(f"  already submitted: {r['id']} ({state[r['id']]})")
+            print(f"  already submitted: {r['id']} ({_uuid_of(state[r['id']])})")
             continue
+        if not draft and _ledger(state) + 9.2 > BUDGET_CREDITS:
+            print(f"\n  STOPPING at the repo budget: {_ledger(state):.0f} of "
+                  f"{BUDGET_CREDITS:.0f} credits recorded. Raise BUDGET_CREDITS "
+                  "deliberately, after checking the Rowan dashboard.")
+            break
         wf = rowan.submit_protein_cofolding_workflow(
             initial_protein_sequences=[r["sequence"]],
             initial_smiles_list=[r["smiles"]],
@@ -106,7 +163,7 @@ def submit(todo: list[dict], model: str, max_credits: int, draft: bool) -> None:
             # it would make the next REAL run skip this system as "already
             # submitted" and silently leave it unscored.
             continue
-        state[r["id"]] = uuid
+        state[r["id"]] = {"uuid": uuid, "credits": None}
         _save_state(state)        # after each one: a crash must not lose the ids
     if draft:
         print("\n[draft] nothing recorded: a draft has no result to collect, and "
@@ -123,27 +180,27 @@ def collect(wait: bool) -> None:
         print(f"nothing submitted (no {STATE.relative_to(ROOT)})")
         return
     out: dict[str, dict[str, float]] = {c: {} for c in COLUMNS}
-    pending, failed = [], {}
+    pending, failed, charged = [], {}, {}
     for sid, uuid in state.items():
         try:
-            wf = rowan.retrieve_workflow(uuid)
+            wf = rowan.retrieve_workflow(_uuid_of(uuid))
             if wait:
                 wf.wait_for_result()
+            charged[sid] = float(getattr(wf, "credits_charged", 0) or 0)
             if not getattr(wf, "is_finished", lambda: False)():
                 pending.append(sid)
                 continue
-            res = wf.data if hasattr(wf, "data") else wf.result
-            cof = res.cofolding_results[0] if getattr(res, "cofolding_results", None) else res
-            aff = getattr(cof, "affinity_score", None)
-            sco = getattr(cof, "scores", None)
-            if aff and aff.pred_value is not None:
-                out["rowan-cofold-affinity"][sid] = 6.0 - float(aff.pred_value)
-            if aff and aff.probability_binary is not None:
-                out["rowan-cofold-pbind"][sid] = float(aff.probability_binary)
-            if sco and sco.iptm is not None:
-                out["rowan-cofold-iptm"][sid] = float(sco.iptm)
+            for col, val in parse_result(wf.data).items():
+                out[col][sid] = val
         except Exception as exc:                      # noqa: BLE001 - one bad id must not lose the batch
             failed[sid] = f"{type(exc).__name__}: {exc}"
+
+    for sid, c in charged.items():
+        # also upgrades the legacy bare-uuid entries written before the ledger
+        state[sid] = {"uuid": _uuid_of(state[sid]), "credits": c}
+    if charged:
+        _save_state(state)
+        print(f"  spend recorded: {_ledger(state):.0f} of {BUDGET_CREDITS:.0f} credits")
 
     for col, (_, note) in COLUMNS.items():
         vals = out[col]

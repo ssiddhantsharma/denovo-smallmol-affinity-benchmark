@@ -66,8 +66,12 @@ jobs:
             echo "::error::ROWAN_API_KEY is not set; skipping rather than failing the chain"
             exit 1
           fi
-          # conservative caps: a weekly job should never be the thing that
-          # empties the account. Raise them by dispatching rowan.yml directly.
+          # This is a REAL submission on a schedule: ~5 systems x ~9.2 credits
+          # = ~46 credits a week, with nobody watching. Deliberate, and bounded
+          # three ways -- these two caps per run, and BUDGET_CREDITS in the
+          # script, which is a ceiling on the cumulative charge and will stop
+          # this job once total spend reaches it. Raise the batch size by
+          # dispatching rowan.yml directly rather than loosening it here.
           python scripts/run_rowan_cofold.py --submit \
             --max-credits 50 --max-systems 5
 

@@ -327,13 +327,24 @@ def separability(rows, methods, kmin=3, n_boot=4000):
 
 def specificity(rows, methods):
     print(f"\n== Specificity: correct vs wrong ligand (AUROC, n={len(rows)}) ==")
-    print(f"{'method':20s}{'AUROC [95% CI]':>22s}")
+    print(f"{'method':20s}{'AUROC [95% CI]':>22s}{'scored':>9s}")
     for m in methods:
         v = [(r[m], r["is_binder"]) for r in rows if r.get(m) is not None]
+        if not v:
+            print(f"{m:20s}{'no scored rows':>22s}{0:>9d}")
+            continue
         sc, lab = map(list, zip(*v, strict=True)); sgn = -1 if m in LOWER_BETTER else 1
+        # AUROC needs both classes. A partially-scored method (a Rowan run still
+        # in flight, say) can cover only binders; that is reported, not skipped,
+        # so a method never vanishes from the table without saying why.
+        if len(set(lab)) < 2:
+            only = "binders" if lab[0] else "non-binders"
+            print(f"{m:20s}{f'n/a ({only} only)':>22s}{len(v):>9d}")
+            continue
         a = auroc([sgn * x for x in sc], lab)
         lo, up = bootstrap_ci([sgn * x for x in sc], lab, auroc)
-        print(f"{m:20s}{f'{a:.2f} [{lo:.2f},{up:.2f}]':>22s}")
+        ci = f"{a:.2f} [{lo:.2f},{up:.2f}]" if None not in (a, lo, up) else "n/a"
+        print(f"{m:20s}{ci:>22s}{len(v):>9d}")
 
 
 def combine_loo(rows):

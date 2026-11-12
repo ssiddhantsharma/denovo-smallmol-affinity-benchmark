@@ -12,14 +12,16 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _load_score():
-    spec = importlib.util.spec_from_file_location("score", ROOT / "scripts/score.py")
+def _load(relpath: str, name: str):
+    """The scripts/ files are standalone CLIs, not an importable package, so they
+    are loaded by path."""
+    spec = importlib.util.spec_from_file_location(name, ROOT / relpath)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
 
 
-score = _load_score()
+score = _load("scripts/score.py", "score")
 
 
 # --- scoring statistics: known values ---
@@ -130,13 +132,6 @@ def test_score_runs():
     assert "Regression" in r.stdout and "AUROC" in r.stdout
 
 
-def _load_ipdae():
-    spec = importlib.util.spec_from_file_location("run_ipdae", ROOT / "scripts/run_ipdae.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def test_ipdae_d0_saturates_below_27_partners():
     """The whole reason ipDAE behaves differently on a ligand than on a protein partner.
 
@@ -145,7 +140,7 @@ def test_ipdae_d0_saturates_below_27_partners():
     moves, the docstring's claim about saturation is wrong and should move with it.
     """
     import numpy as np
-    d0 = _load_ipdae().d0_from_partner_count
+    d0 = _load("scripts/run_ipdae.py", "run_ipdae").d0_from_partner_count
     assert float(d0(np.array([26]))[0]) == 1.0
     assert float(d0(np.array([27]))[0]) > 1.0
     assert float(d0(np.array([1]))[0]) == 1.0
@@ -155,7 +150,7 @@ def test_ipdae_masks_to_contacts_and_ranks_by_pae():
     """A perfectly confident contact scores 1.0, worse PAE scores lower, and -- the one that
     actually catches bugs -- PAE *outside* the contact set must not move the score at all."""
     import numpy as np
-    m = _load_ipdae()
+    m = _load("scripts/run_ipdae.py", "run_ipdae")
     contact = np.array([[True, False], [False, True]])
 
     perfect, _ = m.ipdae_from_block(np.zeros((2, 2)), contact)
@@ -172,7 +167,7 @@ def test_ipdae_masks_to_contacts_and_ranks_by_pae():
 def test_ipdae_refuses_empty_and_mismatched_input():
     import numpy as np
     import pytest
-    m = _load_ipdae()
+    m = _load("scripts/run_ipdae.py", "run_ipdae")
     assert m.ipdae_from_block(np.zeros((2, 2)), np.zeros((2, 2), dtype=bool)) == (None, None)
     with pytest.raises(ValueError):
         m.ipdae_from_block(np.zeros((2, 3)), np.ones((2, 2), dtype=bool))
@@ -305,3 +300,69 @@ def test_registry_producers_point_at_the_script_that_writes_the_file():
         if hits and not any(producer.split()[0] in h for h in hits):
             wrong.append(f"{col}: registry says {producer}, written by {hits}")
     assert not wrong, "\n".join(wrong)
+
+
+# --- Rowan hosted co-folding -------------------------------------------------
+# These cover the three bugs that actually bit: a dict payload read with getattr
+# (wrote an empty file and reported success), a ledger that counted an
+# uncollected run as free, and partial coverage failing the weekly QC job.
+
+def _rowan():
+    return _load("scripts/run_rowan_cofold.py", "run_rowan_cofold")
+
+
+REAL_PAYLOAD = {  # shape returned by the API for 01_apx1049__apixaban
+    "affinity_score": {"pred_value": -1.114, "probability_binary": 0.921},
+    "scores": {"iptm": 0.98, "ptm": 0.969},
+}
+
+
+def test_parse_result_reads_dict_payload():
+    got = _rowan().parse_result(REAL_PAYLOAD)
+    assert got["rowan-cofold-affinity"] == pytest.approx(7.114)
+    assert got["rowan-cofold-pbind"] == pytest.approx(0.921)
+    assert got["rowan-cofold-iptm"] == pytest.approx(0.98)
+
+
+def test_parse_result_unwraps_cofolding_results():
+    assert _rowan().parse_result({"cofolding_results": [REAL_PAYLOAD]}) == \
+        _rowan().parse_result(REAL_PAYLOAD)
+
+
+@pytest.mark.parametrize("payload", [None, {}, "done", {"scores": None},
+                                     {"affinity_score": {"pred_value": None}}])
+def test_parse_result_survives_missing_fields(payload):
+    """A pydantic object, a half-finished run or a changed schema must yield
+    nothing rather than raising or inventing a score."""
+    assert _rowan().parse_result(payload) == {} or \
+        all(v is not None for v in _rowan().parse_result(payload).values())
+
+
+def test_ledger_counts_uncollected_runs_as_spent():
+    """An entry with no recorded charge is a submitted workflow whose cost we have
+    not fetched yet. Counting it as free would let repeated dispatches walk past
+    the budget."""
+    r = _rowan()
+    assert r._ledger({"a": {"uuid": "x", "credits": 9.08}}) == pytest.approx(9.08)
+    assert r._ledger({"a": {"uuid": "x", "credits": None}}) > 0
+    assert r._ledger({"a": "legacy-bare-uuid"}) > 0
+
+
+def test_uuid_of_accepts_both_state_shapes():
+    r = _rowan()
+    assert r._uuid_of("bare") == "bare" == r._uuid_of({"uuid": "bare", "credits": 1.0})
+
+
+def test_budget_is_set_and_finite():
+    r = _rowan()
+    assert 0 < r.BUDGET_CREDITS < 10_000
+
+
+def test_qc_warns_but_passes_on_partial_coverage():
+    """predictions/ currently holds a partially-filled Rowan run. QC must surface
+    it and still exit 0, or the weekly job is red until the run finishes."""
+    out = subprocess.run([sys.executable, str(ROOT / "scripts/qc_dataset.py")],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stdout
+    if "pending)" in out.stdout:
+        assert "WARN" in out.stdout

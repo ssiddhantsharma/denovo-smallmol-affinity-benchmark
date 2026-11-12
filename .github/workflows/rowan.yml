@@ -4,16 +4,22 @@ name: rowan
 #
 # SAFETY, because this holds a paid API key in a public repository:
 #
-#   * workflow_dispatch ONLY. There is no push or schedule trigger, so nothing
-#     spends credits unattended. GitHub restricts manual dispatch to users with
-#     write access, so only a maintainer can start a run.
+#   * workflow_dispatch ONLY for THIS workflow. GitHub restricts manual dispatch
+#     to users with write access, so only a maintainer can start a run here.
+#     Note that weekly.yml IS scheduled and does submit unattended, capped at
+#     5 systems (~46 credits) a week; this file is the manual, larger-batch
+#     path. BUDGET_CREDITS is what bounds the two of them together.
 #   * Secrets are never exposed to workflows triggered by pull_request from a
 #     fork, and this workflow has no pull_request trigger at all. There is no
 #     pull_request_target anywhere in this repo - that is the trigger that would
 #     hand a fork's code the key.
-#   * Every run is capped twice: max_credits per Rowan workflow, and max_systems
-#     for the session. Rowan's own cap is per workflow, so without the second one
-#     a large cohort could spend without bound.
+#   * Every run is capped three ways: max_credits per Rowan workflow, max_systems
+#     for the session, and BUDGET_CREDITS in run_rowan_cofold.py, which is a
+#     ceiling on the total charged across ALL runs. The first two bound one
+#     dispatch; only the third bounds ten dispatches, and it persists because the
+#     ledger it reads is committed to the repo.
+#   * Inputs are passed through env, not interpolated into the shell, so a
+#     dispatch input cannot become a shell command.
 #   * draft defaults to TRUE. The first run of any change should be a draft: it
 #     validates the whole submission path, executes nothing and costs nothing.
 #
@@ -73,12 +79,16 @@ jobs:
         if: inputs.action == 'submit'
         env:
           ROWAN_API_KEY: ${{ secrets.ROWAN_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          MAX_CREDITS: ${{ inputs.max_credits }}
+          MAX_SYSTEMS: ${{ inputs.max_systems }}
+          DRAFT: ${{ inputs.draft }}
         run: |
           python scripts/run_rowan_cofold.py --submit \
-            --model "${{ inputs.model }}" \
-            --max-credits "${{ inputs.max_credits }}" \
-            --max-systems "${{ inputs.max_systems }}" \
-            ${{ inputs.draft == true && '--draft' || '' }}
+            --model "$MODEL" \
+            --max-credits "$MAX_CREDITS" \
+            --max-systems "$MAX_SYSTEMS" \
+            $([ "$DRAFT" = "true" ] && echo --draft)
 
       - name: collect
         if: inputs.action == 'collect'
@@ -87,13 +97,16 @@ jobs:
         run: python scripts/run_rowan_cofold.py --collect
 
       - name: commit workflow ids and any predictions
+        env:
+          ACTION: ${{ inputs.action }}
+          MODEL: ${{ inputs.model }}
         run: |
           git diff --quiet -- reference/rowan_cofold_workflows.json predictions/ && {
             echo "nothing to commit"; exit 0; }
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add reference/rowan_cofold_workflows.json predictions/ 2>/dev/null || true
-          git commit -m "rowan ${{ inputs.action }}: ${{ inputs.model }}"
+          git commit -m "rowan $ACTION: $MODEL"
           git push
           echo "pushed - a predictions change triggers the figures workflow, which redraws"
 

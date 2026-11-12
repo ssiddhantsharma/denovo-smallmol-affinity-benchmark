@@ -1,4 +1,10 @@
 {
-  "00_hcy129_mpnn5__cortisol": "6d1ff6dd-efad-42eb-87df-ccd7a6586004",
-  "01_apx1049__apixaban": "4c9071a5-78a3-4ad5-8dff-38022d747d91"
+  "00_hcy129_mpnn5__cortisol": {
+    "uuid": "6d1ff6dd-efad-42eb-87df-ccd7a6586004",
+    "credits": 9.08
+  },
+  "01_apx1049__apixaban": {
+    "uuid": "4c9071a5-78a3-4ad5-8dff-38022d747d91",
+    "credits": 9.36
+  }
 }
