@@ -99,10 +99,20 @@ def submit(todo: list[dict], model: str, max_credits: int, draft: bool) -> None:
             max_credits=max_credits,
             is_draft=draft,
         )
-        state[r["id"]] = getattr(wf, "uuid", str(wf))
-        print(f"  submitted {r['id']} -> {state[r['id']]}")
+        uuid = getattr(wf, "uuid", str(wf))
+        print(f"  {'drafted' if draft else 'submitted'} {r['id']} -> {uuid}")
+        if draft:
+            # A draft executes nothing, so it has no result to collect. Recording
+            # it would make the next REAL run skip this system as "already
+            # submitted" and silently leave it unscored.
+            continue
+        state[r["id"]] = uuid
         _save_state(state)        # after each one: a crash must not lose the ids
-    print(f"\n{len(state)} workflows tracked in {STATE.relative_to(ROOT)}")
+    if draft:
+        print("\n[draft] nothing recorded: a draft has no result to collect, and "
+              "recording it would make the next real run skip these systems.")
+    else:
+        print(f"\n{len(state)} workflows tracked in {STATE.relative_to(ROOT)}")
 
 
 def collect(wait: bool) -> None:
