@@ -49,6 +49,7 @@ on:
 permissions:
   contents: write
   issues: write
+  pull-requests: write   # the ingest job opens one; a job cannot exceed this
 
 jobs:
   watch:
