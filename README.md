@@ -260,13 +260,28 @@ not the judgement.
 this field's sequences sit in a PDF supplement behind a paywall. For a closed paper the
 extractor correctly returns zero rows and no PR is opened. That is the design.
 
-**A merged row is not a scored row.** Of the 27 prediction columns only the three
-`rowan-<model>-*` ones come from GitHub Actions. `boltz-2*`, `protenix-*`, `nesso-1*`,
-`dtsfm-cosine`, `interface-*` and ipDAE need a GPU, which hosted runners do not have —
-and a *self-hosted* runner on a public repo would let any fork's pull request execute code
-on that machine, so there is none. `scripts/gpu_autoscore.sh` inverts it: a cron **on the
-GPU box** pulls main, runs `update.py --cofold`, runs QC, and pushes. Nothing inbound is
-exposed and no runner token exists. Install it there, not in CI:
+**A merged row is not a scored row — but far less of this needs a GPU than it looks.**
+Of the 27 columns, **11 are GPU-only**:
+
+- **`protenix-*` (9).** Rowan hosts `boltz_2`, `boltz_2_1`, `openfold_3`, `chai_1r` and
+  `esmfold_2`. It does not host Protenix, and nothing else does either.
+- **`boltz-2-pae-{min,mean}` (2)**, and ipDAE with them. These need the full
+  residue-residue PAE matrix. A Rowan co-folding result carries `lddt`, `ptm`, `iptm` and
+  `confidence_score` — no PAE — so they cannot come from there.
+
+Everything else can run without one. `clogp` and `molecular-weight` are RDKit;
+`dtsfm-cosine` is a sequence encoder that runs on CPU; `nesso-1*` has a hosted Rowan
+workflow; `interface-ncontacts` and `interface-ligburial` are gemmi over a pose, and
+Rowan's co-folding returns a downloadable pose (`predicted_structure_uuid`), so they need
+a *structure*, not a *GPU*. The local `boltz-2`, `boltz-2-iptm` and `boltz-2-pbind` have
+a hosted equivalent already, kept as separate `rowan-boltz-2-*` columns for provenance.
+
+So the GPU box is needed for Protenix and for anything derived from a PAE matrix. For
+those, hosted runners have none, and a *self-hosted* runner on a public repo would let any
+fork's pull request execute code on that machine — so there is none.
+`scripts/gpu_autoscore.sh` inverts it: a cron **on the GPU box** pulls main, runs
+`update.py --cofold`, runs QC, and pushes. Nothing inbound is exposed and no runner token
+exists. Install it there, not in CI:
 
 ```
 # on the GPU box, crontab -e
