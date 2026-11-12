@@ -18,5 +18,8 @@ jobs:
       # gemmi is needed by run_ipdae.py, which tests/test_benchmark.py imports.
       # It was missing, so the ipDAE tests failed in CI while passing locally for
       # anyone who happened to have it installed.
-      - run: pip install numpy scikit-learn rdkit gemmi pytest
+      # matplotlib is pinned to the same version figures.yml uses: the figure
+      # consistency test imports make_figure, and a CI that skipped it would
+      # let the exact KeyError that broke figures.yml through again
+      - run: pip install numpy scikit-learn rdkit gemmi pytest 'matplotlib==3.10.9'
       - run: pytest -q

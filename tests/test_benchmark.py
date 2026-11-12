@@ -381,6 +381,7 @@ def test_every_registered_method_has_a_figure_category():
 
 
 def test_figure_categories_all_have_a_colour():
+    pytest.importorskip("matplotlib")  # CI installs it; a bare local env may not
     fig = _load("scripts/make_figure.py", "make_figure")
     assert not set(fig.CAT.values()) - set(fig.COL)
     assert not set(fig.CAT.values()) - set(fig.LABEL)
