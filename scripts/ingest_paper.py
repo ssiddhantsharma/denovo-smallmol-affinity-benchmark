@@ -42,7 +42,15 @@ COLS = ["protein", "ligand_name", "sequence", "smiles", "kd_nM",
 # Full text runs to ~100k characters; the cap keeps one paper to a predictable
 # call rather than an unbounded bill on a 300-page supplement.
 MAX_CHARS = 400_000
-MODEL = "claude-sonnet-5-5"
+MODEL = "claude-sonnet-5-5"          # $2/MTok in, $10/MTok out
+# A ceiling on one run's input, checked with count_tokens (which is free) BEFORE
+# any billable call. MAX_CHARS already bounds the source, but a paper is sent
+# twice -- once to extract, once to verify against -- so the spend is roughly
+# double what the character cap suggests. At this ceiling one paper costs about
+# $0.56. Refusing is correct: a source that large is a supplement dump, not a
+# paper, and extracting from it was never going to work.
+MAX_INPUT_TOKENS = 120_000
+MAX_OUTPUT_TOKENS = 8_000
 
 
 def _get(url: str, timeout: int = 60) -> bytes:
@@ -92,9 +100,20 @@ def fetch_text(doi: str) -> tuple[str, str, str]:
 
 
 def ask(client, system: str, user: str) -> str:
+    """One call, refused if the input exceeds the ceiling. count_tokens is not
+    billed, so the check costs nothing and happens before the spend."""
+    messages = [{"role": "user", "content": user}]
+    n = client.messages.count_tokens(model=MODEL, system=system, messages=messages).input_tokens
+    if n > MAX_INPUT_TOKENS:
+        raise SystemExit(
+            f"refusing: {n:,} input tokens exceeds MAX_INPUT_TOKENS "
+            f"({MAX_INPUT_TOKENS:,}). Raise it deliberately, after checking what "
+            "the source actually is."
+        )
+    print(f"  {n:,} input tokens (~${n * 2e-6:.3f})")
     msg = client.messages.create(
-        model=MODEL, max_tokens=8000,
-        system=system, messages=[{"role": "user", "content": user}],
+        model=MODEL, max_tokens=MAX_OUTPUT_TOKENS,
+        system=system, messages=messages,
     )
     return "".join(b.text for b in msg.content if b.type == "text")
 

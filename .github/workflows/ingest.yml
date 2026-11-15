@@ -46,7 +46,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install anthropic rdkit
+      # Pinned for the same reason rowan-python is: an unpinned install
+      # silently picked up a release whose dependency bound was wrong and
+      # broke the job at import time.
+      - run: pip install 'anthropic==2.8.0' rdkit
 
       - name: skip cleanly without a key
         id: key
