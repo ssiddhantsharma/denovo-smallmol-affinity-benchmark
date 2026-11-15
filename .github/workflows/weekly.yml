@@ -69,7 +69,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install rowan-python
+      # Pinned: rowan-python 3.3.1 declares stjames>=0.0.293 but imports a
+      # symbol absent from it, so an unpinned install fails at `import rowan`.
+      # This pair is the one the collect/submit path was verified against.
+      - run: pip install 'rowan-python==3.2.4' 'stjames==0.0.294'
 
       # Picks up whatever last week submitted and writes the prediction CSVs.
       # Safe when nothing is outstanding: it writes no file and commits nothing.
